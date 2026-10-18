@@ -104,14 +104,41 @@ function skin(species){
   if(species.pattern==='neon'){for(const y of [0,192]){ctx.fillStyle='#98ebe2';ctx.fillRect(30,y,680,9);}for(const y of [210,368]){ctx.fillStyle='#ce593c';ctx.fillRect(130,y,570,14);}}
   const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;texture.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());return texture;
 }
-const swimShader=`
-float phase=uBeat;
-float rear=pow(clamp(-position.x,0.,1.),1.65);
-transformed.z+=sin(phase+position.x*2.5)*rear*.055*uEffort;
+// A shared spine carries every surface, including attached details. The head stays
+// fixed so the visible mouth continues to match the feeding/collision coordinates.
+const spineShader=`
+uniform float uBeat;
+uniform float uEffort;
+uniform float uBodyWave;
+uniform vec2 uBend;
+float fishSinc(float a){if(abs(a)<.05){float a2=a*a;return 1.-a2/6.+a2*a2/120.;}return sin(a)/a;}
+vec3 fishCenter(float x){
+  float d=max(0.,.45-x),k=length(uBend),angle=d*k;
+  float along=d*fishSinc(angle),halfSinc=fishSinc(angle*.5);
+  float across=.5*d*d*halfSinc*halfSinc;
+  vec3 center=vec3(x+d-along,uBend.x*across,uBend.y*across);
+  float rear=max(0.,.25-x);
+  center.z+=sin(uBeat+x*2.5)*rear*rear*uBodyWave*uEffort;
+  return center;
+}
+vec4 fishRotation(float x){
+  vec3 tangent=normalize(fishCenter(x+.002)-fishCenter(x-.002));
+  return normalize(vec4(0.,-tangent.z,tangent.y,1.+tangent.x));
+}
+vec3 fishRotate(vec3 v,vec4 q){return v+2.*cross(q.xyz,cross(q.xyz,v)+q.w*v);}
+vec3 fishDeform(vec3 p){return fishCenter(p.x)+fishRotate(vec3(0.,p.yz),fishRotation(p.x));}
 `;
+function attachSpine(shader,swim){
+  shader.uniforms.uBeat=swim.phase;shader.uniforms.uEffort=swim.effort;
+  shader.uniforms.uBend=swim.bend;shader.uniforms.uBodyWave=swim.wave;
+  shader.vertexShader=spineShader+shader.vertexShader;
+  shader.vertexShader=shader.vertexShader.replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nobjectNormal=fishRotate(objectNormal,fishRotation(position.x));');
+  // Run after the material's local fin flutter, before projection/world transforms.
+  shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','transformed=fishDeform(transformed);\n#include <project_vertex>');
+}
 const bodyMats=speciesCatalog.map(species=>{
   const mat=new T.MeshStandardMaterial({map:skin(species),roughness:species.predator?.48:.35,metalness:species.predator?.18:.05,flatShading:true,transparent:false,opacity:1,depthWrite:true,emissive:species.finColor,emissiveIntensity:species.predator?.01:species.heritage?.10:.06});
-  mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uBeat={value:0};s.uniforms.uEffort={value:.6};s.uniforms.uAura={value:new T.Color(species.finColor)};s.vertexShader='uniform float uTime; uniform float uBeat; uniform float uEffort;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n'+swimShader);s.fragmentShader='uniform vec3 uAura;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
+  mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uAura={value:new T.Color(species.finColor)};s.fragmentShader='uniform vec3 uAura;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
 float aura=pow(1.-abs(dot(normal,normalize(vViewPosition))),2.2);totalEmissiveRadiance+=uAura*aura*.18;
 `);};return mat;
 });
@@ -132,8 +159,8 @@ const eyeMat=new T.MeshStandardMaterial({color:'#d0bd83',roughness:.3,metalness:
 const gillMaterials=speciesCatalog.map(s=>new T.LineBasicMaterial({color:new T.Color(s.palette[0]).multiplyScalar(.8),transparent:true,opacity:.65}));
 const finMats=speciesCatalog.map(species=>{
   const mat=new T.MeshStandardMaterial({color:species.finColor,vertexColors:true,transparent:!species.predator,opacity:species.predator?1:species.heritage?.95:.92,side:T.DoubleSide,depthWrite:!!species.predator,roughness:.38,metalness:.04,emissive:species.finColor,emissiveIntensity:.17});mat.forceSinglePass=true;
-  mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uBeat={value:0};s.uniforms.uEffort={value:.6};s.uniforms.uClassic={value:species.heritage?1:0};s.uniforms.uShark={value:species.predator?1:0};s.vertexShader='uniform float uTime; uniform float uClassic; uniform float uShark; uniform float uBeat; uniform float uEffort; attribute float aFin; varying vec2 vFinUv;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
-${swimShader}
+  mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uBeat={value:0};s.uniforms.uEffort={value:.6};s.uniforms.uClassic={value:species.heritage?1:0};s.uniforms.uShark={value:species.predator?1:0};s.vertexShader='uniform float uTime; uniform float uClassic; uniform float uShark; attribute float aFin; varying vec2 vFinUv;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+float phase=uBeat;
 vFinUv=uv;
 float freeEdge=uv.y*uv.y;
 float flutter=sin(phase-position.x*3.-uv.y*2.4);
@@ -232,9 +259,9 @@ function addSharkMouth(g,species){
 }
 function createFishModel(species){const index=speciesCatalog.indexOf(species),h=species.height,depth=species.depth,rounded=species.heritage,g=new T.Group();g.userData.species=species.id;g.userData.finStyle=rounded?'classic':'flowing';
   // Per-fish uniforms keep stroke timing tied to its actual speed while textures/programs stay shared.
-  const swim={phase:{value:0},effort:{value:.6}};g.userData.swim=swim;
+  const swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()},wave:{value:species.predator?.065:.035}};g.userData.swim=swim;
   function swimmingMesh(geometry,base){const material=base.clone(),compile=base.onBeforeCompile;
-    material.onBeforeCompile=shader=>{compile(shader);shader.uniforms.uBeat=swim.phase;shader.uniforms.uEffort=swim.effort;};material.customProgramCacheKey=()=>base.customProgramCacheKey();
+    material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};material.customProgramCacheKey=()=>base.customProgramCacheKey();
     const mesh=new T.Mesh(geometry,material);mesh.userData.swimmingSurface=true;return mesh;
   }
   g.add(swimmingMesh(bodyGeometries[index],bodyMats[index]),swimmingMesh(finGeometries[index],finMats[index]));
@@ -244,8 +271,12 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
   for(const side of [-1,1]){
     if(species.id==='moon-angelfish'){const curve=new T.CatmullRomCurve3([[.27,-.6,side*.1],[.13,-1.3,side*.15],[-.25,-1.85,side*.18]].map(p=>new T.Vector3(...p)));g.add(new T.Mesh(new T.TubeGeometry(curve,18,.009,4,false),eyeMat));}
   }
-  if(species.predator){addSharkMouth(g,species);mergeDetails(g);return g;}
-  const mouth=new T.Mesh(new T.TorusGeometry(.028,.009,5,12),gillMaterials[index]);mouth.rotation.y=Math.PI/2;mouth.position.set(1.014,-.012,0);g.add(mouth);mergeDetails(g);return g;
+  if(species.predator)addSharkMouth(g,species);
+  else {const mouth=new T.Mesh(new T.TorusGeometry(.028,.009,5,12),gillMaterials[index]);mouth.rotation.y=Math.PI/2;mouth.position.set(1.014,-.012,0);g.add(mouth);}
+  mergeDetails(g);
+  // Bake detail transforms into fish-local space before applying the same spine.
+  g.traverse(part=>{if(!part.geometry||part.userData.swimmingSurface)return;part.updateMatrix();const geometry=part.geometry.clone();geometry.applyMatrix4(part.matrix);part.geometry=geometry;part.position.set(0,0,0);part.rotation.set(0,0,0);part.scale.set(1,1,1);const base=part.material,compile=base.onBeforeCompile;part.material=base.clone();part.material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};part.material.customProgramCacheKey=()=>base.customProgramCacheKey()+'-spine';});
+  return g;
 }
 const motion=new AquariumMotion(fish,random),populationPlan=[0,5,1,5,2,5,3,5,4,5];
 for(let i=0;i<54;i++){const species=speciesCatalog[i<2?6:populationPlan[(i-2)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}

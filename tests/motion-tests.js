@@ -5,13 +5,67 @@ const T=globalThis.THREE;
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 function seeded(seed){return ()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};}
 function fixture(count=12,seed=11042,sharks=false){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=[0,5,1,5,2,5,3,5,4,5];
-  for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<2?6:plan[(sharks?i-2:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
+  for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<2?6:plan[(sharks?i-2:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
 }
 function position(engine,f,x,y,z,yaw=0){f.g.position.set(x,y,z);f.yaw=yaw;f.pitch=0;f.roll=0;f.speed=f.cruise;f.velocity.set(Math.cos(yaw)*f.speed,0,-Math.sin(yaw)*f.speed);f.home.copy(f.g.position);f.goal.set(x+Math.cos(yaw)*8,y,z-Math.sin(yaw)*8);f.nextSense=0;f.nextGoal=100;f.activity='cruise';f.activityFactor=1;f.activityUntil=100;engine.orient(f);}
 function pellet(x,y,z){return {mesh:{position:new T.Vector3(x,y,z)},speed:.17,life:0};}
 function advance(engine,seconds,foods=[],sample=()=>{}){for(let i=0;i<Math.ceil(seconds*60);i++){engine.update(1/60,foods);sample(i);}}
 globalThis.runMotionTests=async function(report=()=>{}){const results=[];
   async function test(name,run){try{const detail=await run();results.push({name,pass:true,detail});}catch(error){results.push({name,pass:false,detail:error.message});}report(results[results.length-1]);await new Promise(r=>setTimeout(r,0));}
+  await test('转向时后半身滞后，左右弯曲对称，直游后平滑恢复',()=>{
+    const bends=[];
+    for(const sign of [-1,1]){const {engine,fish}=fixture(1,42,true),f=fish[0];position(engine,f,0,1,0);
+      engine.steerFish=f=>{f.steer.set(1,0,sign);f.desiredSpeed=f.cruise;};advance(engine,.4);
+      const bend=f.bendYaw;assert(bend*sign>0,'尾部没有滞后于转向');assert(Math.abs(bend)>.15&&Math.abs(bend)<=.48,'转向没有明显弯曲或弯曲过度');
+      assert(f.g.userData.swim.bend.value.y===bend,'渲染参数没有同步');
+      engine.steerFish=f=>{f.steer.copy(f.axis);f.desiredSpeed=f.cruise;};let last=bend;advance(engine,3.5,[],()=>{assert(Math.abs(f.bendYaw-last)<.025,'回正发生跳变');last=f.bendYaw;});
+      assert(Math.abs(f.bendYaw)<.003,'直游后身体没有恢复');bends.push(bend);
+    }assert(Math.abs(bends[0]+bends[1])<1e-8,'左右转向不对称');return {bends};
+  });
+  await test('鲨鱼转弯收尾逐渐减速，尾部回正不会突然加速',()=>{
+    const {engine,fish}=fixture(1,42,true),f=fish[0];position(engine,f,0,1,0);
+    engine.steerFish=f=>{f.steer.set(0,0,-1);f.desiredSpeed=f.cruise;};
+    let previousYaw=f.yaw,previousRate=0,maxRateChange=0;advance(engine,8,[],frame=>{const rate=(f.yaw-previousYaw)*60;if(frame>0)maxRateChange=Math.max(maxRateChange,Math.abs(rate-previousRate));previousYaw=f.yaw;previousRate=rate;});
+    assert(maxRateChange<.012,'转弯后半段的角速度突然下降');assert(Math.abs(f.yaw-Math.PI/2)<.01,'缓和转向后未能对准目标');
+    // Establish a full bend, then abruptly stop steering to exercise the worst
+    // possible release. The tail must ramp into recovery rather than whip back.
+    f.bendYaw=.48;f.bendYawVelocity=0;engine.steerFish=f=>{f.steer.copy(f.axis);f.desiredSpeed=f.cruise;};
+    let lastBend=f.bendYaw,lastRate=0,maxRecoveryRateChange=0,firstRecoveryRate=0,maxRecoveryRate=0;
+    advance(engine,3,[],frame=>{const rate=(f.bendYaw-lastBend)*60;if(frame===0)firstRecoveryRate=Math.abs(rate);maxRecoveryRate=Math.max(maxRecoveryRate,Math.abs(rate));maxRecoveryRateChange=Math.max(maxRecoveryRateChange,Math.abs(rate-lastRate));lastBend=f.bendYaw;lastRate=rate;assert(f.bendYaw>=0,'尾部回正过冲');});
+    assert(firstRecoveryRate<.08,'尾部回正第一帧突然加速');assert(maxRecoveryRateChange<.13,'尾部回正速度不连续');assert(f.bendYaw<.001,'尾部没有完成回正');
+    return {maxRateChange,firstRecoveryRate,maxRecoveryRate,maxRecoveryRateChange};
+  });
+  await test('上浮下潜带动纵向弯曲，低速急转仍保持有限变形',()=>{
+    for(const sign of [-1,1]){const {engine,fish}=fixture(1,42,true),f=fish[0];position(engine,f,0,1,0);engine.steerFish=f=>{f.steer.set(1,sign,0);f.desiredSpeed=.02;};advance(engine,.3);
+      assert(f.bendPitch*sign>0,'俯仰时身体没有纵向跟随');assert(Math.abs(f.bendPitch)<=.24,'纵向弯曲过度');assert(f.g.userData.swim.bend.value.x===f.bendPitch,'纵向变形没有传给材质');
+      engine.steerFish=f=>{f.steer.set(-1,0,1);f.desiredSpeed=.02;};advance(engine,3,[],()=>{assert(Number.isFinite(f.bendYaw)&&Math.abs(f.bendYaw)<=.48,'低速转向折叠或产生无效值');});
+    }
+  });
+  await test('鲨鱼碰撞链覆盖弯曲尾部，头部和鱼嘴位置保持稳定',()=>{
+    const {engine,fish}=fixture(1,42,true),f=fish[0];position(engine,f,0,1,0);f.bendYaw=.48;f.bendPitch=.24;f.effort=0;engine.orient(f);
+    const tail=f.g.position.clone().add(f.segments[0].offset);assert(Math.hypot(tail.y-f.g.position.y,tail.z-f.g.position.z)>f.radius,'未产生足够弯曲来验证碰撞');assert(engine.pointClearance(f,tail)<0,'弯曲尾部漏出碰撞范围');
+    const head=f.segments[3],front=head.offset.clone().addScaledVector(head.axis,head.front);assert(front.distanceTo(f.axis.clone().multiplyScalar(f.front))<1e-8,'头部被身体变形带偏');
+    for(let i=1;i<f.segments.length;i++){const previous=f.segments[i-1],end=previous.offset.clone().addScaledVector(previous.axis,previous.front);assert(end.distanceTo(f.segments[i].offset)<1e-8,'碰撞链发生断裂');}
+  });
+  await test('小鱼面对交替避让指令和正后方目标时不反复猛甩头',()=>{
+    const {engine,fish}=fixture(1),f=fish[0];position(engine,f,0,1,0);f.fear=.7;
+    engine.avoidPredators=()=>{};engine.steerFish=f=>{const sign=Math.floor(engine.elapsed*60)%2?1:-1;f.steer.set(-1,0,sign*.08);f.desiredSpeed=f.cruise*1.8;};
+    let previousYaw=f.yaw,lastRate=0,maxAcceleration=0,violentFlips=0;advance(engine,4,[],frame=>{const rate=(f.yaw-previousYaw)*60;if(frame>0){maxAcceleration=Math.max(maxAcceleration,Math.abs(rate-lastRate)*60);if(rate*lastRate<0&&Math.abs(rate-lastRate)>.4)violentFlips++;}previousYaw=f.yaw;lastRate=rate;});
+    assert(maxAcceleration<=5.001,'相邻帧突然反转转向速度');assert(violentFlips===0,'小鱼仍然左右抽动');assert(Math.abs(f.yaw)>2,'平滑处理导致鱼不能完成掉头');return {maxAcceleration,violentFlips};
+  });
+  await test('追逐上下方食物和吃完离开时，实际升降沿身体方向',()=>{
+    let cases=0,maxVerticalSlip=0;
+    for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator))for(const sign of [-1,1]){
+      const random=seeded(42),fish=[],engine=new AquariumMotion(fish,random),f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(1);position(engine,f,0,1,0);
+      const food=pellet(0,1+sign*1.7,0),foods=[food];let pitched=false,last=f.g.position.clone();
+      advance(engine,8,foods,()=>{const movement=f.g.position.clone().sub(last),slip=Math.abs(movement.y-f.velocity.y/60);maxVerticalSlip=Math.max(maxVerticalSlip,slip);assert(slip<1e-7,'位置被独立的升降或边界纠正拖动');assert(f.velocity.clone().cross(f.axis).length()<1e-7,'实际游动偏离身体方向');if(Math.abs(f.velocity.y)>.3){assert(Math.abs(f.pitch)>.1,'水平鱼头快速升降');pitched=true;}last.copy(f.g.position);});
+      assert(food.eaten,'取消独立升降后吃不到上下方的食物');assert(pitched,'没有通过俯仰接近食物');cases++;
+    }return {cases,maxVerticalSlip};
+  });
+  await test('碰撞纠正不把水平鱼体上下推走',()=>{
+    const {engine,fish}=fixture(2),[a,b]=fish;position(engine,a,0,1,0);position(engine,b,.05,1.1,.05,Math.PI);const ay=a.g.position.y,by=b.g.position.y;
+    engine.resolve(48);assert(a.g.position.y===ay&&b.g.position.y===by,'碰撞纠正改变了鱼的高度');assert(engine.audit().minGap>-.015,'取消垂直推挤后发生相交');
+  });
   await test('看见食物后快速转入追食并明显加速',()=>{const {engine,fish}=fixture(1),f=fish[0];position(engine,f,-4,1,2);const food=pellet(0,1,2),before=f.g.position.distanceTo(food.mesh.position);advance(engine,1,[food]);assert(f.feeding,'没有进入追食状态');assert(f.speed>f.cruise*2,'追食没有达到巡游速度的两倍');assert(before-f.g.position.distanceTo(food.mesh.position)>1,'一秒内接近食物的距离不足');return {cruise:f.cruise,chase:f.speed};});
   await test('远处看不到的食物不改变其他鱼的速度',()=>{const a=fixture(1),b=fixture(1);position(a.engine,a.fish[0],-4,1,2);position(b.engine,b.fish[0],-4,1,2);advance(a.engine,1,[]);advance(b.engine,1,[pellet(40,1,2)]);assert(!b.fish[0].targetFood,'发现了视野外的食物');assert(Math.abs(a.fish[0].speed-b.fish[0].speed)<1e-8,'不可见食物改变了鱼速');});
   await test('鱼不会隔着后脑勺发现远处食物',()=>{const {engine,fish}=fixture(1),f=fish[0];position(engine,f,-4,1,2);advance(engine,.8,[pellet(-10,1,2)]);assert(!f.targetFood,'把身后远处的食物当成可见食物');});
@@ -62,15 +116,17 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
   });
   await test('鲨鱼持续巡游，不停悬，不抢鱼饵',()=>{const {engine,fish}=fixture(2,42,true),foods=[pellet(0,1,0)];position(engine,fish[0],-4,1,0);position(engine,fish[1],4,1,0,Math.PI);let minSpeed=Infinity;advance(engine,40,foods,()=>{for(const f of fish){minSpeed=Math.min(minSpeed,f.speed);assert(!f.targetFood&&!f.feeding,'鲨鱼追逐颗粒鱼饵');assert(f.activity!=='hover','鲨鱼原地停悬');}});assert(foods.length===1&&!foods[0].eaten,'鲨鱼抢走了小鱼的食物');assert(minSpeed>.4,'鲨鱼巡游速度过低');return {minSpeed};});
   await test('有鲨鱼时，前景沙地的三颗鱼饵仍由多条小鱼接力吃完',()=>{const cases=[];for(const seed of [42,11042,2026]){const {engine}=fixture(34,seed,true);advance(engine,2);const x=-4,z=14,y=AquariumMotion.floorHeight(x,z)+.06,foods=Array.from({length:3},(_,i)=>pellet(x+i*.14,y,z)),original=[...foods];let time=0;while(foods.length&&time<24){engine.update(1/60,foods);time+=1/60;}assert(foods.length===0,`种子 ${seed} 前景还有 ${foods.length} 颗没有被吃掉`);assert(new Set(original.map(food=>food.eatenBy)).size>=2,'前景三颗被同一条鱼吃完');cases.push({seed,seconds:time});}return cases;});
-  await test('两条鲨鱼与 52 尾小鱼长时间共游，保持直立且不相交',async()=>{let minUp=1,minGap=Infinity,bites=0;for(const seed of [11042,512,2026]){const {engine,fish}=fixture(54,seed,true);let foods=[];
+  await test('两条鲨鱼与 52 尾小鱼长时间共游，保持直立且不相交',async()=>{let minUp=1,minGap=Infinity,bites=0,maxVerticalSlip=0,maxTurnAcceleration=0;for(const seed of [11042,512,2026]){const {engine,fish}=fixture(54,seed,true);let foods=[];
+    const beforeY=new Float64Array(fish.length),beforeRate=new Float64Array(fish.length),step=engine.step;
+    engine.step=function(dt,foods){for(let i=0;i<fish.length;i++){beforeY[i]=fish[i].g.position.y;beforeRate[i]=fish[i].yawVelocity;}step.call(this,dt,foods);for(let i=0;i<fish.length;i++){const f=fish[i];maxVerticalSlip=Math.max(maxVerticalSlip,Math.abs(f.g.position.y-beforeY[i]-f.velocity.y*dt));maxTurnAcceleration=Math.max(maxTurnAcceleration,Math.abs(f.yawVelocity-beforeRate[i])/dt);}};
     for(let frame=0;frame<10800;frame++){
       if(frame%1800===0){const f=fish[(frame/1800*7)%fish.length],p=f.g.position.clone().addScaledVector(f.axis,3);foods.push(...Array.from({length:3},(_,i)=>pellet(p.x+i*.13,p.y+.7,p.z)));}
       const dt=frame%7===0?1/30:1/60;engine.update(dt,foods);
       foods=foods.filter(food=>{food.life+=dt;food.mesh.position.y=Math.max(AquariumMotion.floorHeight(food.mesh.position.x,food.mesh.position.z)+.06,food.mesh.position.y-food.speed*dt);return !food.eaten&&food.life<24;});
-      if(frame%60===0){const a=engine.audit();minUp=Math.min(minUp,a.minUp);minGap=Math.min(minGap,a.minGap);assert(a.minUp>.90,'追食时出现翻肚');assert(a.minGap>-.015,`种子 ${seed} 第 ${frame} 帧碰撞包络相交：${a.minGap}`);assert(fish.every(f=>Number.isFinite(f.g.position.x)&&Number.isFinite(f.speed)),'出现无效运动数值');}
+      if(frame%60===0){const a=engine.audit();minUp=Math.min(minUp,a.minUp);minGap=Math.min(minGap,a.minGap);assert(a.minUp>.12&&fish.every(f=>Math.abs(f.roll)<.08&&Math.abs(f.pitch)<1.45),'追食时出现翻肚或过度倾斜');assert(a.minGap>-.015,`种子 ${seed} 第 ${frame} 帧碰撞包络相交：${a.minGap}`);assert(fish.every(f=>Number.isFinite(f.g.position.x)&&Number.isFinite(f.speed)),'出现无效运动数值');}
       if(frame%600===0)await new Promise(r=>setTimeout(r,0));
     }bites+=fish.reduce((sum,f)=>sum+(f.bites||0),0);
-  }assert(bites>15,'集中投喂后实际吃到的食物太少');return {simulatedSeconds:617,minUp,minGap,bites};});
+  }assert(bites>15,'集中投喂后实际吃到的食物太少');assert(maxVerticalSlip<1e-7,'拥挤避让或追食后发生独立于游动的垂直位移');assert(maxTurnAcceleration<=5.001,'拥挤避让时突然反转转向速度');return {simulatedSeconds:617,minUp,minGap,bites,maxVerticalSlip,maxTurnAcceleration};});
   return {passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results};
 };
 })();
