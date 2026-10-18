@@ -202,7 +202,8 @@ for(let i=0;i<7;i++){let m=new T.Mesh(new T.PlaneGeometry(range(1,3),21),rayMat)
 const surface=new T.Mesh(new T.PlaneGeometry(85,65),new T.ShaderMaterial({uniforms:{uTime:time},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'uniform float uTime;varying vec2 vUv;void main(){float v=sin(vUv.x*120.+sin(vUv.y*90.+uTime*.3)*2.+uTime*.5)*sin(vUv.y*100.-uTime*.3);gl_FragColor=vec4(.35,.7,.66,.04+pow(abs(v),8.)*.11);}',transparent:true,depthWrite:false,side:T.DoubleSide}));surface.rotation.x=Math.PI/2;surface.position.y=10;scene.add(surface);
 const foodGeo=new T.SphereGeometry(.05,6,5),foodMat=new T.MeshStandardMaterial({color:'#e6bd7b',emissive:'#d29b42',emissiveIntensity:.5,roughness:.7});
 const feedRay=new T.Raycaster(),feedPlane=new T.Plane(),feedNormal=new T.Vector3(),feedAnchor=new T.Vector3(),feedPoint=new T.Vector3();
-function addFood(clientX,clientY){if(foods.length>=60)return;
+let feedBatch=0;
+function addFood(clientX,clientY){
   const rect=renderer.domElement.getBoundingClientRect();
   feedRay.setFromCamera(new T.Vector2((clientX-rect.left)/rect.width*2-1,1-(clientY-rect.top)/rect.height*2),camera);
   camera.getWorldDirection(feedNormal);feedPlane.setFromNormalAndCoplanarPoint(feedNormal,feedAnchor.set(0,.5,2));
@@ -210,9 +211,12 @@ function addFood(clientX,clientY){if(foods.length>=60)return;
   // At the bottom of the picture, drop onto the visible sand rather than behind it.
   const sandHit=feedRay.intersectObject(sandMesh,false)[0];
   if(sandHit&&sandHit.distance<feedRay.ray.origin.distanceTo(feedPoint)){feedPoint.copy(sandHit.point).addScaledVector(feedRay.ray.direction,-.12);}
-  for(let i=0;i<12;i++){const m=new T.Mesh(foodGeo,foodMat);m.position.copy(feedPoint);
+  // Keep a bounded population while every accepted click still creates exactly three pellets.
+  while(foods.length>57){const old=foods.shift();old.mesh.visible=false;old.mesh.removeFromParent();}
+  const meal={},batch=++feedBatch;
+  for(let i=0;i<3;i++){const m=new T.Mesh(foodGeo,foodMat);m.position.copy(feedPoint);
     if(i>0)m.position.add(new T.Vector3(range(-.3,.3),range(-.08,.08),range(-.22,.22)));
-    scene.add(m);foods.push({mesh:m,life:0,speed:range(.13,.22)});
+    scene.add(m);foods.push({mesh:m,meal,batch,life:0,speed:range(.13,.22)});
   }
 }
 function setTheme(value){theme=value;const themes={day:{bg:'#073542',sky:0xb8f2e5,sun:0xffefd1,power:3.4,exposure:1.2,ray:'#82cabc'},night:{bg:'#07172e',sky:0x527fc4,sun:0x9cbcff,power:1.1,exposure:.95,ray:'#557dcc'},sunset:{bg:'#233f43',sky:0xa6c3b4,sun:0xffbd78,power:3.2,exposure:1.25,ray:'#edba7d'}};themeTarget=themes[value];}
@@ -284,5 +288,5 @@ if(first){first=false;$('#loading').style.opacity=0;setTimeout(()=>$('#loading')
 // Lower resolution after sustained slow frames; no oscillating quality loop.
 perfFrames++;perfTime+=rawDt;if(perfTime>5){if(quality==='auto'&&perfFrames/perfTime<38&&pixelScale>1){pixelScale=Math.max(1,pixelScale-.2);renderer.setPixelRatio(pixelScale);}perfFrames=0;perfTime=0;}
 frameCount++;frameTime+=rawDt;if(frameTime>=1){window.aquariumStats={fps:Math.round(frameCount/frameTime),drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,fish:visibleCount,pixelRatio:renderer.getPixelRatio(),paused,theme,food:foods.length,rounded:fish.slice(0,visibleCount).filter(f=>f.rounded).length};frameCount=0;frameTime=0;}}
-window.aquariumAudit=()=>({...motion.audit(),guide:{open:catalog.open,selected:speciesCatalog[selectedSpecies].id,yaw:guideYaw},species:speciesCatalog.map((s,i)=>({id:s.id,name:s.name,count:fish.slice(0,visibleCount).filter(f=>f.species.id===s.id).length,attachment:finGeometries[i].userData.attachment,opaque:bodyMats[i].opacity===1&&!bodyMats[i].transparent})),finStyles:{classic:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='classic').length,flowing:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='flowing').length},foodScreen:foods.map(f=>{const p=f.mesh.position.clone().project(camera);return {x:(p.x+1)*innerWidth*.5,y:(1-p.y)*innerHeight*.5};})});animate();
+window.aquariumAudit=()=>({...motion.audit(),guide:{open:catalog.open,selected:speciesCatalog[selectedSpecies].id,yaw:guideYaw},species:speciesCatalog.map((s,i)=>({id:s.id,name:s.name,count:fish.slice(0,visibleCount).filter(f=>f.species.id===s.id).length,attachment:finGeometries[i].userData.attachment,opaque:bodyMats[i].opacity===1&&!bodyMats[i].transparent})),finStyles:{classic:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='classic').length,flowing:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='flowing').length},foodScreen:foods.map(f=>{const p=f.mesh.position.clone().project(camera);return {x:(p.x+1)*innerWidth*.5,y:(1-p.y)*innerHeight*.5,batch:f.batch};})});animate();
 })();

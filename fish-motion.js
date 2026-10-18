@@ -33,8 +33,9 @@ class AquariumMotion {
     f.cruise=(f.species?f.species.speed:(f.kind===3?.85:.58))*(.93+this.random()*.14);
     f.speed=f.cruise;f.wanderPhase=this.random()*Math.PI*2;f.tailPhase=f.phase||this.random()*Math.PI*2;f.effort=.6;
     const anal=f.species?Math.max(...f.species.anal.map(p=>p[1])):.25;
+    const dorsal=f.species?Math.max(...f.species.dorsal.map(p=>p[1])):.4;f.maxY=10-((f.species?f.species.height:.5)+dorsal)*f.size-.12;
     f.floorClearance=f.kind===2?1.9*f.size+.12:((f.species?f.species.height:.5)+anal)*f.size+.10;
-    f.feedSpeed=clamp(f.cruise*3.2,1.8,2.8);f.targetFood=null;f.nextSense=this.elapsed+this.random()*.2;f.cooldownUntil=0;
+    f.nose=f.size*1.014;f.previousMouth=new T.Vector3();f.lift=0;f.reverse=0;f.feedSpeed=clamp(f.cruise*3.2,1.8,2.8);f.targetFood=null;f.nextSense=this.elapsed+this.random()*.2;f.cooldownUntil=0;f.chewUntil=0;f.servingBites=new WeakMap();
     f.mode='cruise';f.activity='cruise';f.activityFactor=1;f.activityUntil=this.elapsed+2+this.random()*6;f.homeUntil=this.elapsed+16+this.random()*25;
     f.velocity=new T.Vector3(Math.cos(f.yaw)*f.speed,0,-Math.sin(f.yaw)*f.speed);
     this.orient(f);this.fish.push(f);this.place(f,this.fish.length-1);f.home.copy(f.g.position);this.chooseGoal(f);this.orient(f);
@@ -65,46 +66,63 @@ class AquariumMotion {
     for(let i=count;i<before;i++)this.releaseFood(this.fish[i],false);this.resolve(12);
   }
   orient(f){f.g.rotation.set(f.roll,f.yaw,f.pitch,'YZX');f.axis.set(Math.cos(f.yaw)*Math.cos(f.pitch),Math.sin(f.pitch),-Math.sin(f.yaw)*Math.cos(f.pitch));}
-  releaseFood(f,satisfied){const food=f.targetFood;if(food&&food.pursuer===f.id){delete food.pursuer;delete food.reservedUntil;}f.targetFood=null;
+  releaseFood(f,satisfied){const food=f.targetFood;if(food&&food.meal&&food.meal.diner===f.id)delete food.meal.diner;if(food&&food.pursuer===f.id){delete food.pursuer;delete food.reservedUntil;}f.targetFood=null;f.feeding=false;
     if(satisfied||food){f.activity='depart';f.activityFactor=1.15;f.activityUntil=this.elapsed+3+this.random()*3;f.cooldownUntil=this.elapsed+(satisfied?4+this.random()*6:.6+this.random());
       // Leave on different headings after a bite; other fish get a turn at the food.
       const angle=f.yaw+(f.id%2?1:-1)*(.7+this.random()*1.2),p=f.g.position,reach=4+this.random()*4;
       f.goal.set(clamp(p.x+Math.cos(angle)*reach,-12,12),clamp(p.y+(this.random()-.5)*2,Math.max(-2.5,this.minY(f)+.3),5),clamp(p.z-Math.sin(angle)*reach,-6.5,5.8));f.nextGoal=f.activityUntil;
     }
   }
-  perceive(f,foods){
-    if(this.elapsed<f.nextSense||this.elapsed<f.cooldownUntil)return;
-    f.nextSense=this.elapsed+.10+this.random()*.15;
-    let best=null,bestScore=Infinity;const p=f.g.position;
-    for(const food of foods){
-      if(food.eaten||(food.pursuer!==undefined&&food.pursuer!==f.id&&food.reservedUntil>this.elapsed))continue;
-      const q=food.mesh.position,dx=q.x-p.x,dy=q.y-p.y,dz=q.z-p.z,d2=dx*dx+dy*dy+dz*dz;
-      const sight=f.kind===3?8.5:9.5;if(d2>sight*sight)continue;
-      const distance=Math.sqrt(d2),view=(dx*f.axis.x+dy*f.axis.y+dz*f.axis.z)/Math.max(.01,distance);
-      if(distance>2.7&&view<-.28)continue;
-      // Tall fish don't dive through the sand to chase a pellet only a small fish can reach.
-      if(q.y<this.minY(f,q.x,q.z)-f.size*.43-.2)continue;
-      const score=distance+(1-view)*1.2;
-      if(score<bestScore){best=food;bestScore=score;}
+  prepareMeals(foods){
+    // Preserve the original serving before spatial queues merge adjacent feeding batches.
+    for(const food of foods)if(!food.serving&&food.meal)food.serving=food.meal;
+    // Pellets in one small feeding patch share a turn, so mouths don't deadlock nose to nose.
+    for(const food of foods){if(!food.meal)food.meal={};if(food.meal.registered)continue;
+      const old=food.meal,neighbor=foods.find(other=>other!==food&&other.meal&&other.meal.registered&&other.mesh.position.distanceToSquared(food.mesh.position)<2.25);
+      if(neighbor){for(const item of foods)if(item.meal===old)item.meal=neighbor.meal;}else old.registered=true;
     }
-    if(best){best.pursuer=f.id;best.reservedUntil=this.elapsed+5;f.targetFood=best;f.noticeUntil=this.elapsed+.06+this.random()*.16;f.chaseStarted=this.elapsed;}
+    for(const food of foods){if(!food.serving)food.serving=food.meal;const meal=food.meal;if(meal.diner===undefined)continue;const diner=this.fish[meal.diner];if(!diner||diner.id>=this.count||!diner.targetFood||diner.targetFood.eaten||!foods.includes(diner.targetFood)||diner.targetFood.meal!==meal)delete meal.diner;}
+  }
+  canEat(f,food){return this.elapsed>=f.chewUntil&&(f.servingBites.get(food.serving)||0)<2;}
+  foodScore(f,food){
+    if(!this.canEat(f,food)||f.targetFood||this.elapsed<f.cooldownUntil||(food.failedBy&&food.failedBy[f.id]>this.elapsed))return Infinity;
+    const p=f.g.position,q=food.mesh.position,dx=q.x-p.x,dy=q.y-p.y,dz=q.z-p.z,distance=Math.hypot(dx,dy,dz),sight=f.kind===3?8.5:9.5;
+    if(distance>sight)return Infinity;const view=(dx*f.axis.x+dy*f.axis.y+dz*f.axis.z)/Math.max(.01,distance);
+    if(distance>2.7&&view<-.28)return Infinity;
+    if(q.y<this.minY(f,q.x,q.z)-f.size*.43-.2||q.y>f.maxY+f.nose*.39+.2)return Infinity;
+    const angle=Math.abs(Math.atan2(Math.sin(Math.atan2(-dz,dx)-f.yaw),Math.cos(Math.atan2(-dz,dx)-f.yaw)));
+    return distance/f.feedSpeed+angle*.6+Math.abs(dy)*.4;
+  }
+  perceive(f,foods){
+    if(this.elapsed<f.nextSense||this.elapsed<f.cooldownUntil)return;f.nextSense=this.elapsed+.10+this.random()*.15;
+    let best=null,bestScore=Infinity;
+    for(const food of foods){if(food.eaten||(food.meal.diner!==undefined&&food.meal.diner!==f.id))continue;
+      const score=this.foodScore(f,food);if(score>=bestScore)continue;
+      // Give the nearest well-positioned observer the turn, rather than the first array entry.
+      let nearest=true;for(let i=0;i<this.count;i++)if(this.fish[i]!==f&&this.foodScore(this.fish[i],food)<score-.001){nearest=false;break;}
+      if(nearest){best=food;bestScore=score;}
+    }
+    if(best){best.meal.diner=f.id;best.pursuer=f.id;best.reservedUntil=this.elapsed+5;f.targetFood=best;f.noticeUntil=this.elapsed+.06+this.random()*.16;f.chaseStarted=this.elapsed;f.bestFoodDistance=Infinity;f.lastFoodProgress=this.elapsed;}
   }
   steerFish(f,foods){const p=f.g.position;
-    if(f.targetFood&&(f.targetFood.eaten||!foods.includes(f.targetFood)||f.targetFood.pursuer!==f.id||this.elapsed-f.chaseStarted>14))this.releaseFood(f,!!f.targetFood.eaten);
+    if(f.targetFood&&(f.targetFood.eaten||!foods.includes(f.targetFood)||f.targetFood.pursuer!==f.id||f.targetFood.meal.diner!==f.id||this.elapsed-f.chaseStarted>14))this.releaseFood(f,!!f.targetFood.eaten);
     if(!f.targetFood)this.perceive(f,foods);
     if(this.elapsed>f.activityUntil&&!f.targetFood)this.chooseActivity(f);
     let goal=f.goal;f.feeding=!!f.targetFood&&this.elapsed>=f.noticeUntil;
     if(f.feeding){const food=f.targetFood;food.reservedUntil=this.elapsed+5;
-      const q=food.mesh.position,dx=q.x-p.x,dz=q.z-p.z,hd=Math.max(.05,Math.hypot(dx,dz)),nose=f.size*.92;
-      // Aim the mouth, not the body's centre, at a slowly sinking pellet.
-      f.seekX=q.x-dx/hd*nose;f.seekZ=q.z-dz/hd*nose;
-      const prediction=clamp(hd/Math.max(1.2,f.feedSpeed),0,.45)*(food.speed||0);
-      f.seekY=clamp(q.y-prediction,this.minY(f,f.seekX,f.seekZ)+.04,6.1);
-      f.steer.set(f.seekX-p.x,(f.seekY-p.y)*.95,f.seekZ-p.z);
-      const mouthDistance=Math.hypot(q.x-p.x-f.axis.x*f.size*.98,q.y-p.y-f.axis.y*f.size*.98,q.z-p.z-f.axis.z*f.size*.98);
-      f.desiredSpeed=f.feedSpeed*(.25+.75*T.MathUtils.smoothstep(mouthDistance,.25,2));f.mode='feeding';
+      const q=food.mesh.position,dx=q.x-p.x,dz=q.z-p.z,hd=Math.hypot(dx,dz);
+      // Keep facing the pellet itself. A moving offset goal caused reversal/orbiting near the mouth.
+      f.seekX=q.x;f.seekZ=q.z;f.seekY=clamp(q.y-f.axis.y*f.nose,this.minY(f,q.x,q.z),f.maxY);
+      f.steer.set(dx,(q.y-p.y)*.8,dz);
+      const mouthDistance=Math.hypot(q.x-p.x-f.axis.x*f.nose,q.y-p.y-f.axis.y*f.nose,q.z-p.z-f.axis.z*f.nose);
+      if(mouthDistance<f.bestFoodDistance-.025){f.bestFoodDistance=mouthDistance;f.lastFoodProgress=this.elapsed;}
+      const remaining=hd-f.nose*Math.cos(f.pitch);
+      // Arrive all the way at the mouth; no mandatory minimum speed and no endless circles.
+      f.desiredSpeed=Math.min(f.feedSpeed,Math.max(0,remaining)*2.5);
+      f.reverse=remaining<-.08&&mouthDistance>.2?clamp(remaining*1.6,-.65,0):0;f.mode='feeding';
+      if(this.elapsed-f.lastFoodProgress>3.5){if(!food.failedBy)food.failedBy={};food.failedBy[f.id]=this.elapsed+3;this.releaseFood(f,false);}
     }else{
-      if(f.activity!=='hover'&&(p.distanceToSquared(goal)<1||this.elapsed>f.nextGoal)){
+      f.reverse=0;if(f.activity!=='hover'&&(p.distanceToSquared(goal)<1||this.elapsed>f.nextGoal)){
         if(this.random()<.2){f.activity='hover';f.activityFactor=.08;f.activityUntil=this.elapsed+1+this.random()*2;goal.copy(p).addScaledVector(f.axis,.5);}else this.chooseGoal(f);
       }
       f.steer.copy(goal).sub(p);f.steer.y*=.5;
@@ -112,25 +130,28 @@ class AquariumMotion {
       f.steer.x+=Math.sin(this.elapsed*.47+f.wanderPhase)*.45;
       f.steer.z+=Math.cos(this.elapsed*.37+f.wanderPhase*1.7)*.45;
       const rhythm=1+.15*Math.sin(this.elapsed*.8+f.wanderPhase)+.08*Math.sin(this.elapsed*1.7+f.wanderPhase*2);
-      f.desiredSpeed=f.cruise*f.activityFactor*rhythm;f.mode=f.activity;
+      f.desiredSpeed=f.cruise*(this.elapsed<f.chewUntil?.55:f.activityFactor)*rhythm;f.mode=f.activity;
     }
-    const length=f.steer.length();if(length>.001)f.steer.multiplyScalar(Math.max(.18,f.desiredSpeed)/length);
-    if(Math.abs(p.x)>7.3&&p.y<-.6){f.steer.y+=(-.6-p.y)*.5;f.steer.x-=Math.sign(p.x)*.4;}
+    const length=f.steer.length();if(length>.001)f.steer.multiplyScalar(Math.max(f.feeding?1.2:.18,f.desiredSpeed)/length);
+    if(!f.feeding&&Math.abs(p.x)>7.3&&p.z<4&&p.y<-.6){f.steer.y+=(-.6-p.y)*.5;f.steer.x-=Math.sign(p.x)*.4;}
     const bottom=this.minY(f)+.12;if(p.y<bottom)f.steer.y+=(bottom-p.y)*.9;
-    if(p.y>5.9)f.steer.y-=(p.y-5.9)*.9;
-    if(p.x>13)f.steer.x-=(p.x-13)*.8;if(p.x< -13)f.steer.x+=(-13-p.x)*.8;
-    if(p.z< -7)f.steer.z+=(-7-p.z)*.7;if(p.z>6)f.steer.z-=(p.z-6)*.7;
+    const top=f.feeding?f.maxY:5.9,side=f.feeding?Math.max(13,Math.abs(f.targetFood.mesh.position.x)+1):13,front=f.feeding?Math.max(6,f.targetFood.mesh.position.z+1):6;
+    if(p.y>top)f.steer.y-=(p.y-top)*.9;
+    if(p.x>side)f.steer.x-=(p.x-side)*.8;if(p.x< -side)f.steer.x+=(-side-p.x)*.8;
+    if(p.z< -7)f.steer.z+=(-7-p.z)*.7;if(p.z>front)f.steer.z-=(p.z-front)*.7;
   }
-  step(dt,foods){this.elapsed+=dt;
+  step(dt,foods){this.elapsed+=dt;this.prepareMeals(foods);
+    for(let i=0;i<this.count;i++){const f=this.fish[i];f.previousMouth.copy(f.g.position).addScaledVector(f.axis,f.nose);}
     for(const food of foods)if(food.pursuer>=this.count){delete food.pursuer;delete food.reservedUntil;}
     for(let i=0;i<this.count;i++)this.steerFish(this.fish[i],foods);
     for(let i=0;i<this.count;i++)for(let j=i+1;j<this.count;j++){
       const a=this.fish[i],b=this.fish[j],d2=a.g.position.distanceToSquared(b.g.position);if(d2>49)continue;
       const lead=Math.min(1.2,1.4/Math.max(.6,a.speed+b.speed)),c=measure(a,b,lead,.5);
       if(c.gap<0){const force=Math.min(2.5,-c.gap*1.7),nx=c.x,ny=c.y,nz=c.z;
-        a.steer.x+=nx*force;a.steer.y+=ny*force*.7;a.steer.z+=nz*force;b.steer.x-=nx*force;b.steer.y-=ny*force*.7;b.steer.z-=nz*force;
+        const aw=a.feeding&&!b.feeding?.12:(!a.feeding&&b.feeding?1.8:1),bw=b.feeding&&!a.feeding?.12:(!b.feeding&&a.feeding?1.8:1);
+        a.steer.x+=nx*force*aw;a.steer.y+=ny*force*.7*aw;a.steer.z+=nz*force*aw;b.steer.x-=nx*force*bw;b.steer.y-=ny*force*.7*bw;b.steer.z-=nz*force*bw;
         const dx=a.g.position.x-b.g.position.x,dz=a.g.position.z-b.g.position.z;
-        if(Math.abs(dx)>Math.abs(dz)*2){const side=a.id<b.id?1:-1;a.steer.z+=side*force*.5;b.steer.z-=side*force*.5;}
+        if(Math.abs(dx)>Math.abs(dz)*2){const side=a.id<b.id?1:-1;a.steer.z+=side*force*.5*aw;b.steer.z-=side*force*.5*bw;}
       }
       // Small fish sometimes swim loosely together, then return to their own paths.
       if(a.kind===3&&b.kind===3&&!a.feeding&&!b.feeding&&d2>3&&d2<16){
@@ -141,24 +162,41 @@ class AquariumMotion {
     for(let i=0;i<this.count;i++){
       const f=this.fish[i],s=f.steer,horizontal=Math.hypot(s.x,s.z);
       const targetYaw=horizontal>.04?Math.atan2(-s.z,s.x):f.yaw,delta=Math.atan2(Math.sin(targetYaw-f.yaw),Math.cos(targetYaw-f.yaw));
-      const turnRate=f.feeding?1.65:f.activity==='hover'?.45:.75+(f.activity==='dart'?.25:0),turn=clamp(delta,-dt*turnRate,dt*turnRate);f.yaw+=turn;
+      const turnRate=f.feeding?2.2:f.activity==='hover'?.45:.75+(f.activity==='dart'?.25:0),turn=clamp(delta,-dt*turnRate,dt*turnRate);f.yaw+=turn;
       // Accelerate into a chase, brake before a sharp turn or a bite, then glide out.
-      const headingBrake=1-(f.feeding?.52:.56)*clamp(Math.abs(delta)/1.9,0,1),targetSpeed=f.desiredSpeed*headingBrake;
+      const headingBrake=f.feeding?Math.max(0,Math.cos(delta)):1-.56*clamp(Math.abs(delta)/1.9,0,1),targetSpeed=f.desiredSpeed*headingBrake;
       const acceleration=f.feeding?2.2:1.0,deceleration=f.feeding?3:1.3;
       f.speed+=clamp(targetSpeed-f.speed,-deceleration*dt,acceleration*dt);
       const pitchLimit=f.feeding?.40:.22,pitchTarget=clamp(Math.atan2(s.y,Math.max(.12,horizontal)),-pitchLimit,pitchLimit);
       f.pitch+=(pitchTarget-f.pitch)*(1-Math.exp(-dt*(f.feeding?3.2:1.5)));
       f.roll+=(clamp(-turn/dt*.055,-.075,.075)-f.roll)*(1-Math.exp(-dt*3));this.orient(f);
-      f.velocity.copy(f.axis).multiplyScalar(f.speed);f.g.position.addScaledVector(f.velocity,dt);
-      f.g.position.x=clamp(f.g.position.x,-15,15);f.g.position.z=clamp(f.g.position.z,-8,7);f.g.position.y=clamp(f.g.position.y,this.minY(f),6.3);
-      f.tailPhase=(f.tailPhase+dt*(1.5+f.speed*4.4+(f.feeding?.9:0)))%(Math.PI*40);
-      f.effort+=(clamp(.17+f.speed/Math.max(.3,f.cruise)*.38+(f.feeding?.18:0),.18,1.45)-f.effort)*(1-Math.exp(-dt*4));
+      // Pectoral lift aligns height without requiring a steep dive or a perpetual orbit.
+      const liftTarget=f.feeding?clamp((f.seekY-f.g.position.y)*2.2-(f.targetFood.speed||0),-1.3,1.3)-f.axis.y*f.speed:0;
+      f.lift+=clamp(liftTarget-f.lift,-3*dt,3*dt);
+      f.velocity.copy(f.axis).multiplyScalar(f.speed);f.velocity.x+=f.axis.x*f.reverse;f.velocity.z+=f.axis.z*f.reverse;f.velocity.y+=f.lift;f.g.position.addScaledVector(f.velocity,dt);
+      // Pursuit can enter the visible foreground and surface. Soft patrol bounds bring fish back afterwards.
+      f.g.position.x=clamp(f.g.position.x,-43,43);f.g.position.z=clamp(f.g.position.z,-33,33);f.g.position.y=clamp(f.g.position.y,this.minY(f),f.maxY);
+      const swimSpeed=f.velocity.length();f.tailPhase=(f.tailPhase+dt*(1.5+swimSpeed*4.4+(f.feeding?.9:0)))%(Math.PI*40);
+      f.effort+=(clamp(.17+swimSpeed/Math.max(.3,f.cruise)*.38+(f.feeding?.18:0),.18,1.45)-f.effort)*(1-Math.exp(-dt*4));
       if(f.g.userData.swim){f.g.userData.swim.phase.value=f.tailPhase;f.g.userData.swim.effort.value=f.effort;}
     }
     this.resolve(10);
-    for(const food of foods){if(food.eaten)continue;const q=food.mesh.position;
-      for(let j=0;j<this.count;j++){const f=this.fish[j];if(this.elapsed<f.cooldownUntil)continue;const p=f.g.position,nose=f.size*.98,dx=q.x-p.x-f.axis.x*nose,dy=q.y-p.y-f.axis.y*nose,dz=q.z-p.z-f.axis.z*nose,mouthRadius=.17+f.size*.10;
-        if(dx*dx+dy*dy+dz*dz<mouthRadius*mouthRadius){food.eaten=true;f.bites=(f.bites||0)+1;this.releaseFood(f,true);break;}
+    for(let i=foods.length-1;i>=0;i--){const food=foods[i];if(food.eaten)continue;const q=food.mesh.position;
+      for(let j=0;j<this.count;j++){const f=this.fish[j];if(!this.canEat(f,food))continue;const p=f.g.position,m=f.previousMouth,ex=p.x+f.axis.x*f.nose,ey=p.y+f.axis.y*f.nose,ez=p.z+f.axis.z*f.nose;
+        const sx=ex-m.x,sy=ey-m.y,sz=ez-m.z,length=sx*sx+sy*sy+sz*sz,t=length>1e-9?clamp(((q.x-m.x)*sx+(q.y-m.y)*sy+(q.z-m.z)*sz)/length,0,1):0;
+        const dx=q.x-m.x-sx*t,dy=q.y-m.y-sy*t,dz=q.z-m.z-sz*t,mouthRadius=.17+f.size*.1;
+        if(dx*dx+dy*dy+dz*dz<mouthRadius*mouthRadius){
+          // Consume only one pellet, then release the feeding spot for another fish.
+          food.eaten=true;food.eatenBy=f.id;food.eatenAt=this.elapsed;food.mesh.visible=false;food.mesh.removeFromParent?.();foods.splice(i,1);
+          f.bites=(f.bites||0)+1;
+          f.servingBites.set(food.serving,(f.servingBites.get(food.serving)||0)+1);
+          this.releaseFood(f,true);
+          if(food.meal.diner===f.id)delete food.meal.diner;
+          delete food.pursuer;delete food.reservedUntil;
+          f.chewUntil=this.elapsed+2.5;
+          f.cooldownUntil=f.chewUntil;f.activityUntil=Math.max(f.activityUntil,this.elapsed+5);
+          break;
+        }
       }
     }
   }
@@ -167,7 +205,8 @@ class AquariumMotion {
       for(let i=0;i<this.count;i++)for(let j=i+1;j<this.count;j++){
         const a=this.fish[i],b=this.fish[j];if(a.g.position.distanceToSquared(b.g.position)>49)continue;
         const c=measure(a,b,0,.06);if(c.gap>=-.0001)continue;const depth=-c.gap,shift=Math.min(depth*.52,.2);maxDepth=Math.max(maxDepth,depth);this.lastMaxCorrection=Math.max(this.lastMaxCorrection,shift);
-        a.g.position.x+=c.x*shift;a.g.position.y+=c.y*shift;a.g.position.z+=c.z*shift;b.g.position.x-=c.x*shift;b.g.position.y-=c.y*shift;b.g.position.z-=c.z*shift;
+        const aw=a.feeding&&!b.feeding?.2:(!a.feeding&&b.feeding?1.8:1),bw=b.feeding&&!a.feeding?.2:(!b.feeding&&a.feeding?1.8:1);
+        a.g.position.x+=c.x*shift*aw;a.g.position.y+=c.y*shift*aw;a.g.position.z+=c.z*shift*aw;b.g.position.x-=c.x*shift*bw;b.g.position.y-=c.y*shift*bw;b.g.position.z-=c.z*shift*bw;
       }if(maxDepth<.002)break;
     }
   }
