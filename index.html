@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#061b24">
+<title>澄境 · 一方水下时光</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="aquarium" aria-label="可互动的三维水族馆"></main>
+<div class="vignette"></div>
+<header class="topbar ui"><a class="brand" href="./" aria-label="澄境首页"><span class="brand-mark">◌</span> 澄境 <span class="brand-en">STILLWATER</span></a><div class="live"><i></i> 一方水下时光 <span id="clock">--:--</span></div></header>
+<section class="intro ui"><div class="eyebrow"><span></span> YOUR LITTLE OCEAN</div><h1>让时间，<br>慢慢游走。</h1><p>沉入一片蓝，什么也不必做。</p><div class="scene-label"><span class="tiny-wave">≈</span><span id="scene-name">日光浅湾</span><span class="divider"></span><span>26°C</span></div></section>
+<div class="feeding-hint" id="feeding-hint">轻点水面，投下一点惊喜</div>
+<aside class="panel ui" id="panel" aria-label="水族馆设置" hidden>
+<div class="panel-heading">你的一方水世界 <button id="close-panel" aria-label="关闭设置">×</button></div>
+<label>光照氛围</label><div class="themes"><button data-theme="day" class="selected"><i class="theme-day"></i>日光浅湾</button><button data-theme="night"><i class="theme-night"></i>蓝色夜曲</button><button data-theme="sunset"><i class="theme-sunset"></i>落日余温</button></div>
+<label for="population">鱼群数量 <output id="population-value">32</output></label><input id="population" type="range" min="12" max="52" step="4" value="32">
+<label for="speed">时间流速 <output id="speed-value">舒缓</output></label><input id="speed" type="range" min="0.4" max="1.6" step="0.1" value="0.8">
+<div class="setting-row"><label for="quality">画面品质</label><select id="quality"><option value="auto">自适应</option><option value="high">精致</option><option value="low">省电</option></select></div>
+<p class="panel-note">拖动探索视角 · 滚轮拉近远方<br>按 H 隐藏界面 · 按空格暂停时光</p>
+</aside>
+<footer class="bottom ui"><div class="ecosystem"><span class="ecosystem-icon">✧</span><div>一个自在的小世界<span><b id="fish-count">32</b> 尾鱼 · 无尽的宁静</span></div></div><nav class="toolbar" aria-label="水族馆控制">
+<button id="feed" title="投喂鱼群" aria-label="投喂鱼群"><svg viewBox="0 0 24 24"><path d="M5 5h10l3 6-6 7-7-6zM8 8l6 4M17 18h.01M20 15h.01M15 21h.01"/></svg><span>投喂</span></button><span class="tool-divider"></span>
+<button id="sound" title="水下环境音" aria-label="开启环境音" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4zM15 8c3 2 3 6 0 8M18 5c5 4 5 10 0 14"/></svg><span>声音</span></button>
+<button id="pause" title="暂停 / 空格" aria-label="暂停动画" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg><span>暂停</span></button>
+<button id="settings" title="环境设置" aria-label="环境设置" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M9 4v6M16 14v6"/></svg><span>设置</span></button>
+<button id="fullscreen" title="全屏沉浸 / F" aria-label="全屏沉浸"><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg><span>全屏</span></button></nav><div class="signature">TAKE A BREATH. STAY A WHILE.</div></footer>
+<div class="toast" id="toast" role="status"></div>
+<div id="loading"><span class="loader-orbit"></span><p>一方静谧，正在苏醒</p><small>STILLWATER AQUARIUM</small></div>
+<script src="vendor/three.min.js"></script><script src="aquarium.js"></script>
+</body></html>
