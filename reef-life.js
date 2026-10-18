@@ -67,7 +67,7 @@ function animateModel(g,t){const u=g.userData;
   if(u.species==='tide-crab'){AQUARIUM_CRAB.animate(g,t);return;}
   u.legs.forEach((leg,i)=>{leg.rotation.y=Math.sin(t*4+i*1.8)*.09;});
   u.tendrils.forEach((m,i)=>{m.rotation.x=Math.sin(t*1.3+i)*.055;m.rotation.z=Math.cos(t*.9+i)*.045;});if(u.lid)u.lid.rotation.x=-.13-.10*(1+Math.sin(t*.7));if(u.bell){const pulse=Math.sin(t*2.2);u.bell.scale.set(1+pulse*.09,1-pulse*.13,1+pulse*.09);}}
-function populate(scene){const residents=[],layout=[[0,-5.2,4.8,.9],[0,7,3.8,.82],[2,-3.3,4.3,.95],[2,3.8,4.5,.75],[2,-11.7,3.2,.85],[3,-7.8,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72]];
+function populate(scene){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72]];
   for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===4?3.8:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===4?0:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);}
   let previous=0;
   const rand=r=>{r.randomState=(r.randomState*1664525+1013904223)>>>0;return r.randomState/4294967296;};
