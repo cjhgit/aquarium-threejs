@@ -193,7 +193,7 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     assert(maxStep<f.cruise*2.1/60+.0001,'可见鲨鱼发生瞬移');assert(maxAcceleration<=.481,'可见鲨鱼的加速度不连续或没有上限');assert(f.speed>initialSpeed+.3,'鲨鱼没有逐步加速');assert(f.tailPhase-beforePhase>4*(1+initialSpeed*1.6)&&f.effort>beforeEffort+.08,'加速时没有加强摆尾');return {maxStep,maxAcceleration};
   });
   await test('堆石礁区共游时不穿岩壁，可见鲨鱼保持连续移动',()=>{
-    const {engine,fish}=fixture(34,11042,true);engine.obstacles=AQUARIUM_REEF.decorate(new T.Scene()).obstacles;let minReef=Infinity,minFish=Infinity,maxVisibleStep=0;const before=engine.predators.map(f=>f.model.position.clone());
+    const {engine,fish}=fixture(34,11042,true);engine.obstacles=AQUARIUM_REEF.decorate(new T.Scene()).obstacles;engine.resolve(48);for(const f of fish)engine.syncModel(f,0,true);let minReef=Infinity,minFish=Infinity,maxVisibleStep=0;const before=engine.predators.map(f=>f.model.position.clone());
     advance(engine,65,[],frame=>{engine.predators.forEach((f,i)=>{maxVisibleStep=Math.max(maxVisibleStep,f.model.position.distanceTo(before[i]));before[i].copy(f.model.position);});if(frame%60)return;minFish=Math.min(minFish,engine.audit().minGap);for(const f of fish)for(const o of engine.obstacles)minReef=Math.min(minReef,engine.obstacleGap(f,o));});
     assert(minReef>-.015&&minFish>-.015,`堆石共游发生相交：岩壁 ${minReef}，鱼群 ${minFish}`);assert(maxVisibleStep<.04,'鲨鱼接近堆石时出现短距离跳动');return {minReef,minFish,maxVisibleStep};
   });
@@ -234,6 +234,71 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     for(const side of [-1,1]){const legs=rig.legs.filter(l=>l.side===side);for(let i=1;i<4;i++)assert(Math.abs(legs[i].hip.z-legs[i-1].hip.z-.19)<1e-10,'四条腿的前后间距不规律');}
     const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);for(let frame=1;frame<=60*60;frame++){life.update(frame/60);scene.updateMatrixWorld(true);for(const r of life.residents.filter(r=>r.species.id==='tide-crab'))for(const l of r.g.userData.crab.legs){const joints=[l.root,l.lower,l.toe,l.tip].map(o=>o.getWorldPosition(new T.Vector3())),a=joints[0],b=joints[3],dx=b.x-a.x,dz=b.z-a.z,length=Math.hypot(dx,dz);for(const p of joints)maxOffLine=Math.max(maxOffLine,Math.abs((p.x-a.x)*dz-(p.z-a.z)*dx)/Math.max(length,.001));}}
     assert(maxRowDrift<1e-8,'直行步态出现前后摆腿');assert(maxOffLine<1e-8,'俯视腿部三段折成锯齿');return {maxRowDrift,maxOffLine};
+  });
+  await test('水母伞盖与触须碰撞包络随脉动、摆动和漂移更新',()=>{
+    const scene=new T.Scene(),obstacles=[],life=AQUARIUM_REEF.populate(scene,obstacles),jellies=life.residents.filter(r=>r.species.id==='moon-jelly');assert(obstacles.length===4,'水母未注册双层碰撞体');let maxOutside=0;
+    for(let frame=0;frame<120;frame++){life.update(frame/20);scene.updateMatrixWorld(true);for(const r of jellies){assert(r.colliders.every(o=>o.velocity===r.driftVelocity&&o.owner===r),'碰撞体未绑定活动水母');r.g.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position,v=new T.Vector3();for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);const distance=Math.min(...r.colliders.map(c=>Math.hypot((v.x-c.center.x)/c.radii.x,(v.y-c.center.y)/c.radii.y,(v.z-c.center.z)/c.radii.z)));maxOutside=Math.max(maxOutside,distance-1);}});}}
+    assert(maxOutside<.025,`可见伞盖或触须超出碰撞范围：${maxOutside}`);return {jellies:jellies.length,colliders:obstacles.length,maxOutside};
+  });
+  await test('鲨鱼提前绕开水母，正面接近时稳定选择一侧并减速',()=>{
+    for(const direction of [-1,1]){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0],o={kind:'jellyfish',center:new T.Vector3(0,2,0),radii:new T.Vector3(.75,1,.75),velocity:new T.Vector3()};engine.obstacles=[o];position(engine,f,-direction*10,2,0,direction===1?0:Math.PI);f.steer.copy(f.axis);f.desiredSpeed=f.cruise;assert(engine.obstacleGap(f,o)>1,'提前避让检查起点太近');engine.reefAvoid(f);assert(Math.abs(f.steer.z)>.1,'迎面接近没有侧向绕行');assert(f.desiredSpeed<f.cruise*.95,'接近水母没有减速');}
+  });
+  await test('水母碰撞覆盖鲨鱼长胸鳍与上尾鳍尖端',()=>{
+    const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];position(engine,f,0,2,0);f.effort=0;engine.updateSpineBounds(f);engine.syncModel(f,0,true);const visible=engine.renderedBounds(f);
+    for(const [x,y,z] of [[-.49,-.145,-.68],[-.49,-.145,.68],[-1.96,.54,0]]){const p=new T.Vector3(x,y,z).multiplyScalar(f.size).add(f.model.position),o={kind:'jellyfish',center:p,radii:new T.Vector3(.03,.03,.03)};assert(engine.obstacleGap(visible,o)<0,'水母可从胸鳍或尾鳍尖端穿过');}
+  });
+  await test('25 / 60 帧迎面接近漂浮水母，可见鲨鱼和水母始终分离',()=>{
+    let minGap=Infinity,maxJellyStep=0,maxPressure=0;
+    for(const fps of [25,60])for(const direction of [-1,1]){const obstacles=[],life=AQUARIUM_REEF.populate(new T.Scene(),obstacles),r=life.residents.find(r=>r.species.id==='moon-jelly');obstacles.splice(0,obstacles.length,...r.colliders);r.home.set(0,2,-.6);r.phase=0;life.update(0);
+      const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];engine.obstacles=obstacles;position(engine,f,-direction*11,2,0,direction===1?0:Math.PI);f.goal.set(direction*14,2,0);f.nextGoal=1000;f.nextPlay=1000;f.activityUntil=1000;engine.syncModel(f,0,true);let previous=r.g.position.clone();
+      for(let i=1;i<=fps*24;i++){life.update(i/fps);engine.update(1/fps,[]);const visible=engine.renderedBounds(f);for(const o of obstacles)minGap=Math.min(minGap,engine.obstacleGap(visible,o));maxJellyStep=Math.max(maxJellyStep,r.g.position.distanceTo(previous));maxPressure=Math.max(maxPressure,r.displacement.length());previous.copy(r.g.position);assert(r.g.position.toArray().every(Number.isFinite),'水母挤开后坐标无效');}
+    }
+    assert(minGap>-.01,`可见鲨鱼与水母穿模：${minGap}，最大水母位移 ${maxJellyStep}，偏移 ${maxPressure}`);assert(maxJellyStep<.4,'水母单帧位移超过快速摆尾的接触上限');return {minGap,maxJellyStep,maxPressure};
+  });
+  await test('水母漂向鲨鱼侧腹和弯曲尾部时被轻推，碰撞以可见模型为准',()=>{
+    let minGap=Infinity,maxPush=0;
+    for(const x of [-6,-2,2]){const obstacles=[],life=AQUARIUM_REEF.populate(new T.Scene(),obstacles),r=life.residents.find(r=>r.species.id==='moon-jelly');obstacles.splice(0,obstacles.length,...r.colliders);const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];engine.obstacles=obstacles;position(engine,f,30,2,0);f.bendYaw=.32;f.bendPitch=.1;engine.updateSpineBounds(f);f.model.position.set(0,2,0);f.model.quaternion.identity();r.g.rotation.set(0,0,0);r.g.position.set(x,2,5);r.updateColliders();let pushes=0;
+      for(let i=0;i<300;i++){r.displace(0,-.015);const previous=r.g.position.clone();engine.resolveResidentContacts();const shift=r.g.position.distanceTo(previous);pushes+=shift>.001?1:0;maxPush=Math.max(maxPush,shift);const visible=engine.renderedBounds(f);for(const o of obstacles)minGap=Math.min(minGap,engine.obstacleGap(visible,o));}
+      assert(pushes>0,'只检查模拟坐标，漏掉可见身侧或尾部');assert(f.model.position.distanceTo(new T.Vector3(0,2,0))<1e-9,'挤开水母时移动了鲨鱼');
+    }assert(minGap>-.01,'水母穿过可见鲨鱼侧腹或尾部');assert(maxPush<.25,`水母接触分离产生过大位移：${maxPush}`);return {minGap,maxPush};
+  });
+  await test('真实礁湾中两条鲨鱼与水母长时间共游，追玩与摆尾不穿模',()=>{
+    let minGap=Infinity,maxStep=0;
+    for(const fps of [25,60]){const environment=AQUARIUM_REEF.decorate(new T.Scene()),originalRandom=Math.random;let life;try{Math.random=seeded(11042);life=AQUARIUM_REEF.populate(new T.Scene(),environment.obstacles);}finally{Math.random=originalRandom;}const {engine,fish}=fixture(34,11042,true);engine.obstacles=environment.obstacles;const turtle=life.residents.find(r=>r.species.id==='sea-turtle');environment.obstacles.push({center:turtle.g.position,radius:1.35});const jellies=life.residents.filter(r=>r.species.id==='moon-jelly');engine.resolve(24);for(const f of fish)engine.syncModel(f,0,true);let previous=jellies.map(r=>r.g.position.clone());
+      for(let i=1;i<=fps*90;i++){life.update(i/fps);engine.update(1/fps,[]);for(const f of engine.predators){const visible=engine.renderedBounds(f);for(const r of jellies)for(const o of r.colliders)minGap=Math.min(minGap,engine.obstacleGap(visible,o));}jellies.forEach((r,j)=>{maxStep=Math.max(maxStep,r.g.position.distanceTo(previous[j]));previous[j].copy(r.g.position);});}
+    }assert(minGap>-.01,`真实礁湾中鲨鱼与水母穿模：${minGap}`);assert(maxStep<.45,`真实礁湾中水母位移突跳：${maxStep}`);return {minGap,maxStep};
+  });
+  await test('礁石碰撞从可见网格生成，覆盖旋转和凹凸表面',()=>{
+    const geometry=new T.IcosahedronGeometry(1,2),p=geometry.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),k=1+.1*Math.sin(x*8+y*5)*Math.cos(z*6);p.setXYZ(i,x*k,y*k,z*k);}
+    const mesh=new T.Mesh(geometry);mesh.position.set(13,-2.8,-5);mesh.scale.set(3.3,4.2,3);mesh.rotation.set(.27,2.1,-.24);mesh.updateMatrixWorld(true);const o=AQUARIUM_REEF.rockObstacle(mesh),v=new T.Vector3();let maxRadius=0;
+    for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(mesh.matrixWorld);assert(o.box.containsPoint(v),'石块顶点超出碰撞包围盒');v.sub(o.center).applyQuaternion(o.inverseRotation);maxRadius=Math.max(maxRadius,Math.hypot(v.x/o.radii.x,v.y/o.radii.y,v.z/o.radii.z));}assert(maxRadius<=1,'可见礁石露出碰撞包络');return {maxRadius,vertices:p.count};
+  });
+  await test('25 / 60 帧鲨鱼接近大型旋转礁石，身体与鱼鳍不穿模且无突跳',()=>{
+    let minVisibleGap=Infinity,maxStep=0,travel=0;
+    for(const fps of [25,60]){const mesh=new T.Mesh(new T.IcosahedronGeometry(1.1,2));mesh.position.set(10,-1.6,-3);mesh.scale.set(3.3,4.2,2.6);mesh.rotation.set(.27,1.1,-.24);const o=AQUARIUM_REEF.rockObstacle(mesh),{engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];engine.obstacles=[o];position(engine,f,-5,2,-3);f.goal.set(16,2,-3);f.nextGoal=1000;f.nextPlay=1000;f.activityUntil=1000;engine.resolve(48);engine.syncModel(f,0,true);const start=f.model.position.clone();let previous=start.clone();
+      for(let i=0;i<fps*40;i++){engine.update(1/fps,[]);const gap=engine.obstacleGap(engine.renderedBounds(f),o),step=f.model.position.distanceTo(previous);minVisibleGap=Math.min(minVisibleGap,gap);maxStep=Math.max(maxStep,step);assert(gap>=-.001,`可见鲨鱼穿入旋转礁石：${gap}`);assert(step<f.cruise*2.1*Math.ceil(60/fps)/60+.001,`碰撞造成鲨鱼突跳：${step}`);previous.copy(f.model.position);}travel=Math.max(travel,start.distanceTo(f.model.position));
+    }assert(travel>2,'鲨鱼卡在礁石旁不再移动');return {minVisibleGap,maxStep,travel};
+  });
+  await test('完整礁石布局中两条鲨鱼逐步运动平滑，转向与摆尾不断帧',()=>{
+    let minTravel=Infinity,minStroke=Infinity,minGap=Infinity,maxStep=0,maxAcceleration=0,maxAngularAcceleration=0,minPhaseStep=Infinity,maxEffortRate=0;const cases=[];
+    for(const [fps,sizeFactor] of [[25,.94],[60,1.06]]){const scene=new T.Scene(),garden=AQUARIUM_REEF.makeRockGarden(Array.from({length:4},()=>new T.MeshBasicMaterial()),seeded(11042)),environment=AQUARIUM_REEF.decorate(scene);environment.obstacles.push(...garden.obstacles);assert(environment.obstacles.filter(o=>o.kind==='rock').length===81,'检查没有包含实际右侧礁石与散石');
+      const originalRandom=Math.random;let life;try{Math.random=seeded(11042);life=AQUARIUM_REEF.populate(scene,environment.obstacles);}finally{Math.random=originalRandom;}
+      const turtle=life.residents.find(r=>r.species.id==='sea-turtle');environment.obstacles.push({center:turtle.g.position,radius:1.35});const fish=[],engine=new AquariumMotion(fish,seeded(11042),environment),species=AQUARIUM_SPECIES[6];
+      for(let i=0;i<2;i++){const g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()}};engine.register({g,species,kind:species.kind,rounded:false,size:species.size*sizeFactor,direction:i?-1:1,phase:0});}engine.setCount(2);
+      // Sample every physics step, including the 2/3 substeps of a 25 Hz frame.
+      // Coarse displacement checks miss the old stop/escape/reset jitter entirely.
+      const samples=fish.map(f=>({p:f.model.position.clone(),v:f.renderVelocity.clone(),q:f.model.quaternion.clone(),angular:new T.Vector3(),phase:f.visualState.phase,effort:f.visualState.effort})),sync=engine.syncModel.bind(engine);
+      engine.syncModel=(f,dt,immediate=false)=>{sync(f,dt,immediate);if(!dt)return;const last=samples[f.id],v=f.model.position.clone().sub(last.p).divideScalar(dt),rotation=f.model.quaternion.clone().multiply(last.q.clone().invert());if(rotation.w<0)rotation.set(-rotation.x,-rotation.y,-rotation.z,-rotation.w);const axis=new T.Vector3(rotation.x,rotation.y,rotation.z),length=axis.length(),angular=axis.multiplyScalar(length>1e-9?2*Math.atan2(length,rotation.w)/length/dt:0);
+        maxAcceleration=Math.max(maxAcceleration,v.clone().sub(last.v).length()/dt);maxAngularAcceleration=Math.max(maxAngularAcceleration,angular.clone().sub(last.angular).length()/dt);const phaseStep=(f.visualState.phase-last.phase+Math.PI*40)%(Math.PI*40);minPhaseStep=Math.min(minPhaseStep,phaseStep);maxEffortRate=Math.max(maxEffortRate,Math.abs(f.visualState.effort-last.effort)/dt);
+        assert(v.clone().sub(last.v).length()/dt<=.481,`${fps} 帧鲨鱼 ${f.id} 速度突变`);assert(phaseStep>=dt*.99&&phaseStep<=dt*10,'避礁时摆尾时钟被截停或跳变');assert(Math.abs(f.visualState.effort-last.effort)/dt<=1.201,'摆尾振幅突然改变');
+        assert(f.model.position.y<=f.maxY+1.2,'避礁时鲨鱼持续向水面漂移');
+        last.p.copy(f.model.position);last.v.copy(v);last.q.copy(f.model.quaternion);last.angular.copy(angular);last.phase=f.visualState.phase;last.effort=f.visualState.effort;
+      };
+      const previous=fish.map(f=>f.model.position.clone()),windowStart=previous.map(p=>p.clone()),phase=fish.map(f=>f.visualState.phase),stroke=[0,0];let lowest=Infinity;
+      for(let i=1;i<=fps*96;i++){life.update(i/fps);engine.update(1/fps,[]);for(let j=0;j<2;j++){const f=fish[j],p=f.model.position,step=p.distanceTo(previous[j]),delta=f.visualState.phase-phase[j];stroke[j]+=Math.abs(Math.atan2(Math.sin(delta),Math.cos(delta)));phase[j]=f.visualState.phase;previous[j].copy(p);maxStep=Math.max(maxStep,step);assert(step<f.cruise*2.1*Math.ceil(60/fps)/60+.001,'脱困时鲨鱼突然跳动');if(i%10===0){const visible=engine.renderedBounds(f);for(const o of environment.obstacles.filter(o=>o.kind==='rock'))minGap=Math.min(minGap,engine.obstacleGap(visible,o));}
+          if(i%(fps*4)===0){const distance=p.distanceTo(windowStart[j]);lowest=Math.min(lowest,distance);minTravel=Math.min(minTravel,distance);minStroke=Math.min(minStroke,stroke[j]);assert(distance>.12,`${fps} 帧鲨鱼 ${j} 在第 ${i/fps} 秒前四秒没有继续游动：${distance}`);assert(stroke[j]>.15,`${fps} 帧鲨鱼 ${j} 摆尾冻结：${stroke[j]}`);windowStart[j].copy(p);stroke[j]=0;}
+        }}cases.push({fps,sizeFactor,minWindowTravel:lowest});
+    }assert(minGap>=-.001,`持续游动时穿入礁石：${minGap}`);assert(maxAngularAcceleration<4.7,`转向加速度突变：${maxAngularAcceleration}`);return {cases,minTravel,minStroke,minGap,maxStep,maxAcceleration,maxAngularAcceleration,minPhaseStep,maxEffortRate};
   });
   return {passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results};
 };

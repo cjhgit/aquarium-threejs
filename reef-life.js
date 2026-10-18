@@ -73,6 +73,17 @@ function animateModel(g,t){const u=g.userData;
   u.tendrils.forEach((m,i)=>{m.rotation.x=Math.sin(t*1.3+i)*.055;m.rotation.z=Math.cos(t*.9+i)*.045;});if(u.lid)u.lid.rotation.x=-.13-.10*(1+Math.sin(t*.7));if(u.bell){const pulse=Math.sin(t*2.2);u.bell.scale.set(1+pulse*.09,1-pulse*.13,1+pulse*.09);}}
 function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72],[5,3,.5,1.12]];
   for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===4?3.8:index===5?1.5:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===4?0:index===5?-.9:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);if(s.id==='sea-turtle')residents[id].turtleController=AQUARIUM_TURTLE.makeController(g,obstacles,AquariumMotion.floorHeight);}
+  function jellyPose(r,t){const {g,home,phase}=r,q=t+phase;g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6).add(r.displacement);g.rotation.z=Math.sin(q*.21)*.08;}
+  // The bell and trailing tentacles are separate live envelopes. Their centres
+  // follow the rendered resident, including pulse, sway and contact displacement.
+  for(const r of residents.filter(r=>r.species.id==='moon-jelly')){
+    r.displacement=new T.Vector3();r.driftVelocity=new T.Vector3();jellyPose(r,0);r.previousPosition=r.g.position.clone();
+    const size=r.g.scale.x;
+    r.colliders=[[.18,.96,.74],[-.75,.90,1.4]].map(([y,width,height])=>({kind:'jellyfish',owner:r,center:new T.Vector3(),radii:new T.Vector3(width*size,height*size,width*size),velocity:r.driftVelocity,localCenter:new T.Vector3(0,y*size,0)}));
+    r.updateColliders=()=>{for(const o of r.colliders)o.center.copy(o.localCenter).applyQuaternion(r.g.quaternion).add(r.g.position);};
+    r.displace=(x,z,y=0)=>{r.displacement.x+=x;r.displacement.y+=y;r.displacement.z+=z;r.g.position.x+=x;r.g.position.y+=y;r.g.position.z+=z;r.previousPosition.x+=x;r.previousPosition.y+=y;r.previousPosition.z+=z;r.updateColliders();};
+    for(const o of r.colliders){o.displace=r.displace;obstacles.push(o);}r.updateColliders();
+  }
   let previous=0;
   const rand=r=>{r.randomState=(r.randomState*1664525+1013904223)>>>0;return r.randomState/4294967296;};
   function crab(r,t,dt){const {g}=r,p=g.position;
@@ -86,18 +97,34 @@ function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[
   return {residents,update(t){const dt=Math.max(0,Math.min(.5,t-previous));previous=t;for(const r of residents){const {g,home,phase,species:s}=r,q=t+phase;
     if(s.id==='tide-crab')crab(r,t,dt);
     if(s.id==='sea-turtle')r.turtleController.update({dt,t});
-    if(s.id==='moon-jelly'){g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6);g.rotation.z=Math.sin(q*.21)*.08;}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
+    if(s.id==='moon-jelly'){r.displacement.multiplyScalar(Math.exp(-dt*.22));jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
     animateModel(g,q);
   }}};
 }
 // Tapered curves avoid uniform-width pipes, repeated forks and the geometric fan lattice.
 function taper(g,points,start,end,mat){const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p))),segments=14,sides=7,geo=new T.TubeGeometry(curve,segments,start,sides,false),p=geo.attributes.position;
   for(let row=0;row<=segments;row++){const t=row/segments,center=curve.getPointAt(t),scale=T.MathUtils.lerp(1,end/start,t);for(let j=0;j<=sides;j++){const i=row*(sides+1)+j;p.setXYZ(i,center.x+(p.getX(i)-center.x)*scale,center.y+(p.getY(i)-center.y)*scale,center.z+(p.getZ(i)-center.z)*scale);}}geo.computeVertexNormals();g.add(new T.Mesh(geo,mat));}
+// Derive the collider from the same noisy geometry and transform that is drawn.
+function rockObstacle(mesh){
+  const p=mesh.geometry.attributes.position;let radius=0;for(let i=0;i<p.count;i++)radius=Math.max(radius,Math.hypot(p.getX(i),p.getY(i),p.getZ(i)));radius*=1.015;
+  const rotation=mesh.quaternion.clone(),axes=[new T.Vector3(1,0,0),new T.Vector3(0,1,0),new T.Vector3(0,0,1)].map(v=>v.applyQuaternion(rotation)),radii=mesh.scale.clone().multiplyScalar(radius),extent=new T.Vector3();
+  for(const key of ['x','y','z'])extent[key]=Math.hypot(axes[0][key]*radii.x,axes[1][key]*radii.y,axes[2][key]*radii.z);
+  return {kind:'rock',center:mesh.position.clone(),radii,rotation,inverseRotation:rotation.clone().invert(),axes,box:new T.Box3(mesh.position.clone().sub(extent),mesh.position.clone().add(extent))};
+}
+// Shared by the tank and motion regressions, including the right-hand towers.
+function makeRockGarden(materials,random){
+  const geometry=new T.IcosahedronGeometry(1,2),p=geometry.attributes.position,meshes=[],range=(a,b)=>a+(b-a)*random();
+  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),k=1+.1*Math.sin(x*8+y*5)*Math.cos(z*6);p.setXYZ(i,x*k,y*k,z*k);}geometry.computeVertexNormals();
+  function add(x,y,z,sx,sy,sz){const m=new T.Mesh(geometry,materials[Math.floor(random()*materials.length)]);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.rotation.set(range(-.3,.3),range(0,6),range(-.3,.3));meshes.push(m);}
+  add(10,-3.7,-3,4,2.5,2.6);add(13,-2.8,-5,3.3,4.2,3);add(7.8,-4,-1,2,1.5,2);add(-14,-4,-4,2,1.1,2);add(11,-4.1,2,2.4,1.1,1.8);
+  for(let i=0;i<65;i++){const x=range(-19,19),z=range(-10,10),s=range(.08,.38);add(x,-4.53,z,s,s*.55,s*.8);}
+  return {geometry,meshes,obstacles:meshes.map(rockObstacle)};
+}
 function decorate(scene){const obstacles=[],stones=new T.Group();let seed=7321;
   const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;},span=(a,b)=>a+(b-a)*random();
   const stoneMats=['#63766c','#748174','#556b65','#809083'].map(c=>material(c,{roughness:.98,flatShading:true}));
   function stone(x,y,z,sx,sy,sz,index){const geo=new T.IcosahedronGeometry(1,2),p=geo.attributes.position;
-    for(let i=0;i<p.count;i++){const a=p.getX(i),b=p.getY(i),c=p.getZ(i),noise=1+.085*Math.sin(a*7+b*5+index)*Math.cos(c*6-index);p.setXYZ(i,a*noise,b*noise,c*noise);}geo.computeVertexNormals();const m=new T.Mesh(geo,stoneMats[index%4]);m.position.set(x,y,z);m.scale.set(sx,sy,sz);stones.add(m);obstacles.push({center:new T.Vector3(x,y,z),radii:new T.Vector3(sx*1.04,sy*1.04,sz*1.04)});}
+    for(let i=0;i<p.count;i++){const a=p.getX(i),b=p.getY(i),c=p.getZ(i),noise=1+.085*Math.sin(a*7+b*5+index)*Math.cos(c*6-index);p.setXYZ(i,a*noise,b*noise,c*noise);}geo.computeVertexNormals();const m=new T.Mesh(geo,stoneMats[index%4]);m.position.set(x,y,z);m.scale.set(sx,sy,sz);stones.add(m);obstacles.push(rockObstacle(m));}
   // A broad buried foundation carries uneven side blocks and a fallen capstone.
   // Their negative space is an off-centre passage, rather than a continuous torus.
   [[-9.8,-4.95,.05,5.15,1.18,2.6],[-13,-3.25,-.2,1.85,2.0,2.05],[-12.8,-1.15,-.45,1.38,1.18,1.6],[-6.45,-3.32,.15,1.85,1.75,2.0],[-6.9,-1.25,-.3,1.24,1.0,1.45],[-9.65,-.57,-.25,3.15,.88,1.7],[-10.7,.42,-.42,1.6,.65,1.15],[-8.6,.22,-.1,1.2,.60,1.05],[-13.55,-4.1,1.1,1.9,.85,1.3],[-5.35,-4.12,1.0,1.5,.72,1.35],[-12.4,-4.0,-2,1.5,1,1.15]].forEach((p,i)=>stone(...p,i));batchStatic(stones);scene.add(stones);
@@ -116,5 +143,5 @@ function decorate(scene){const obstacles=[],stones=new T.Group();let seed=7321;
   [[[-1.8,2.5,.23],[-1.1,3.4,.15],[.2,4.1,.07]],[[.5,2.65,.20],[1.3,3.25,.13],[2.5,3.6,.055]],[[-2.4,2.6,.21],[-2.8,1.65,.15],[-3.8,1.2,.05]],[[1.5,2.3,.15],[2.0,1.2,.11],[3,.65,.05]],[[1.25,3.25,.13],[.9,3.9,.09],[1.15,4.5,.04]]].forEach((points,i)=>taper(drift,points.map(([x,z,y])=>ground(x,z,y)),i===4?.045:.085,i===4?.012:.024,wood));batchStatic(drift);scene.add(drift);
   return {obstacles};
 }
-globalThis.AQUARIUM_REEF=Object.freeze({species,createModel,animateModel,populate,decorate});
+globalThis.AQUARIUM_REEF=Object.freeze({species,createModel,animateModel,populate,decorate,rockObstacle,makeRockGarden});
 })();

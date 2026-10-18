@@ -118,7 +118,7 @@ class AquariumMotion {
     f[key]=clamp(next,-limit,limit);if(f[key]!==next)f[velocityKey]=0;
   }
   updateSpineBounds(f){
-    if(!f.segments)return;
+    if(!f.segments)return;f.boundsVersion=(f.boundsVersion||0)+1;
     const k=Math.hypot(f.bendPitch,f.bendYaw),bounds=[f.back/f.size,-.95,-.25,.45,f.front/f.size];
     // Match fishCenter, including its traveling stroke. Capsule thickness
     // covers the small error between each curve section and its chord.
@@ -206,20 +206,38 @@ class AquariumMotion {
     if(p.x>side)f.steer.x-=(p.x-side)*.8;if(p.x< -side)f.steer.x+=(-side-p.x)*.8;
     if(p.z< -9)f.steer.z+=(-9-p.z)*.7;if(p.z>front)f.steer.z-=(p.z-front)*.7;
   }
-  obstacleContact(f,o,lead=0){
+  obstacleContact(f,o,lead=0,proximity=lead?4.5:.025){
+    if((o.kind==='jellyfish'||o.kind==='rock')&&f.predator&&!f.residentEnvelope)f=this.residentBounds(f);
     if(!o.radii){const away=f.g.position.clone().sub(o.center).normalize();return {gap:this.pointClearance(f,o.center)-o.radius,x:away.x,y:away.y,z:away.z};}
+    if(o.box){let separation=Infinity;for(const b of f.segments||[f]){const br=b.radius*Math.max(1,b.vertical),p=b.g.position,v=f.velocity,offset=b.offset||{x:0,y:0,z:0},x=p.x+offset.x+v.x*lead,y=p.y+offset.y+v.y*lead,z=p.z+offset.z+v.z*lead,ax=x+b.axis.x*b.back,ay=y+b.axis.y*b.back,az=z+b.axis.z*b.back,bx=x+b.axis.x*b.front,by=y+b.axis.y*b.front,bz=z+b.axis.z*b.front;
+      const dx=Math.max(o.box.min.x-Math.max(ax,bx)-br,Math.min(ax,bx)-br-o.box.max.x,0),dy=Math.max(o.box.min.y-Math.max(ay,by)-br,Math.min(ay,by)-br-o.box.max.y,0),dz=Math.max(o.box.min.z-Math.max(az,bz)-br,Math.min(az,bz)-br-o.box.max.z,0);separation=Math.min(separation,Math.hypot(dx,dy,dz));}
+      if(separation>proximity)return {gap:separation,x:0,y:0,z:0};
+    }
     let gap=Infinity,nx=0,ny=0,nz=0;
     for(const body of f.segments||[f]){const p=body.g.position,offset=body.offset||{x:0,y:0,z:0},v=f.velocity;
-      const rx=o.radii.x+body.radius,ry=o.radii.y+body.radius*body.vertical,rz=o.radii.z+body.radius;
-      const x=(p.x+offset.x+v.x*lead+body.axis.x*body.back-o.center.x)/rx,y=(p.y+offset.y+v.y*lead+body.axis.y*body.back-o.center.y)/ry,z=(p.z+offset.z+v.z*lead+body.axis.z*body.back-o.center.z)/rz;
-      const length=body.front-body.back,ax=body.axis.x*length/rx,ay=body.axis.y*length/ry,az=body.axis.z*length/rz,t=clamp(-(x*ax+y*ay+z*az)/Math.max(1e-9,ax*ax+ay*ay+az*az),0,1),qx=x+ax*t,qy=y+ay*t,qz=z+az*t,d=Math.hypot(qx,qy,qz),signed=(d-1)*Math.min(rx,ry,rz);
-      if(signed<gap){gap=signed;const normal=Math.hypot(qx/rx,qy/ry,qz/rz)||1;nx=qx/rx/normal;ny=qy/ry/normal;nz=qz/rz/normal;}
+      const start=new T.Vector3(p.x+offset.x+v.x*lead+body.axis.x*body.back-o.center.x-(o.velocity?.x||0)*lead,p.y+offset.y+v.y*lead+body.axis.y*body.back-o.center.y-(o.velocity?.y||0)*lead,p.z+offset.z+v.z*lead+body.axis.z*body.back-o.center.z-(o.velocity?.z||0)*lead),axis=body.axis.clone().multiplyScalar(body.front-body.back);
+      const support=i=>body.radius*Math.sqrt(1+(body.vertical*body.vertical-1)*o.axes[i].y*o.axes[i].y);
+      const rx=o.radii.x+(o.axes?support(0):body.radius),ry=o.radii.y+(o.axes?support(1):body.radius*body.vertical),rz=o.radii.z+(o.axes?support(2):body.radius);
+      if(o.inverseRotation){start.applyQuaternion(o.inverseRotation);axis.applyQuaternion(o.inverseRotation);}start.set(start.x/rx,start.y/ry,start.z/rz);axis.set(axis.x/rx,axis.y/ry,axis.z/rz);
+      const t=clamp(-start.dot(axis)/Math.max(1e-9,axis.lengthSq()),0,1),q=start.addScaledVector(axis,t),d=q.length(),signed=(d-1)*Math.min(rx,ry,rz);
+      if(signed<gap){gap=signed;q.set(q.x/rx,q.y/ry,q.z/rz).normalize();if(o.rotation)q.applyQuaternion(o.rotation);nx=q.x;ny=q.y;nz=q.z;}
     }return {gap,x:nx,y:ny,z:nz};
   }
   obstacleGap(f,o){return this.obstacleContact(f,o).gap;}
   reefAvoid(f){
     const reach=f.predator?2.5:.65;let closest=null,gap=reach;
-    for(const o of this.obstacles){const c=this.obstacleContact(f,o,f.predator?1.4:.35);if(c.gap<gap){gap=c.gap;closest=c;}}
+    for(const o of this.obstacles){
+      if(f.predator&&o.kind==='jellyfish'){
+        const c=this.obstacleContact(f,o,2.4),weight=clamp(1-c.gap/4.5,0,1);if(!weight)continue;
+        // A sideways component breaks the head-on symmetry, so a shark rounds
+        // the jelly instead of reversing into it or repeatedly switching sides.
+        const tx=-f.axis.z,tz=f.axis.x,lateral=c.x*tx+c.z*tz,side=Math.abs(lateral)>.12?Math.sign(lateral):-f.turnSide;
+        f.steer.x+=(c.x*3.2+tx*side*2.2)*weight;f.steer.y+=c.y*weight*.7;f.steer.z+=(c.z*3.2+tz*side*2.2)*weight;
+        f.desiredSpeed=Math.min(f.desiredSpeed,f.cruise*(1-weight*.65));
+        continue;
+      }
+      const c=this.obstacleContact(f,o,f.predator?1.4:.35);if(c.gap<gap){gap=c.gap;closest=c;}
+    }
     if(!closest)return;const force=(reach-gap)*(f.predator?1.65:1.8);f.steer.x+=closest.x*force;f.steer.y+=closest.y*force;f.steer.z+=closest.z*force;
     if(f.predator&&gap<.7)f.desiredSpeed=Math.min(f.desiredSpeed,f.cruise*.65);
   }
@@ -363,18 +381,88 @@ class AquariumMotion {
     }
   }
   syncModel(f,dt,immediate=false){const model=f.model;
-    if(immediate||!f.renderVelocity){model.position.copy(f.g.position);model.quaternion.copy(f.g.quaternion);f.renderVelocity=f.velocity.clone();f.renderAcceleration=0;return;}
+    if(immediate||!f.renderVelocity){model.position.copy(f.g.position);model.quaternion.copy(f.g.quaternion);f.renderVelocity=f.velocity.clone();f.renderAcceleration=0;this.syncSharkPose(f,0);return;}
     const desired=f.g.position.clone().sub(model.position).multiplyScalar(f.predator?3.5:10).add(f.velocity),maxSpeed=f.predator?f.cruise*2.1:Math.max(f.feedSpeed,f.cruise*3.2);
+    if(f.predator)this.avoidRenderedRocks(f,desired);
     if(desired.length()>maxSpeed)desired.setLength(maxSpeed);
     const change=desired.sub(f.renderVelocity),limit=(f.predator?.48:5)*dt;if(change.length()>limit)change.setLength(limit);
     const before=f.renderVelocity.length();f.renderVelocity.add(change);f.renderAcceleration=(f.renderVelocity.length()-before)/dt;model.position.addScaledVector(f.renderVelocity,dt);
     model.quaternion.slerp(f.g.quaternion,1-Math.exp(-dt*(f.predator?6:12)));
     if(f.g.userData.swim){const swim=f.g.userData.swim,boost=clamp(Math.max(f.acceleration||0,f.renderAcceleration)/Math.max(.3,f.predator?.48:2.2),0,1);swim.effort.value=Math.max(swim.effort.value,.35+f.renderVelocity.length()/Math.max(.3,f.cruise)*.38+boost*.65);}
+    this.syncSharkPose(f,dt);
   }
-  update(dt,foods){this.accumulator=Math.min(this.accumulator+dt,.2);while(this.accumulator>=this.stepSize){this.step(this.stepSize,foods);this.accumulator-=this.stepSize;for(let i=0;i<this.count;i++)this.syncModel(this.fish[i],this.stepSize);}}
+  syncSharkPose(f,dt){
+    if(!f.predator)return;
+    const swim=f.g.userData.swim;
+    if(swim)swim.phase.value=f.tailPhase;
+    f.visualState={phase:f.tailPhase,effort:swim?.effort.value??f.effort,bendPitch:swim?.bend?.value.x??f.bendPitch,bendYaw:swim?.bend?.value.y??f.bendYaw};
+    if(dt&&f.visualEffort!==undefined){const delta=f.visualState.effort-f.visualEffort;f.visualState.effort=f.visualEffort+clamp(delta*(1-Math.exp(-dt*4)),-dt*1.2,dt*1.2);if(swim)swim.effort.value=f.visualState.effort;}
+    f.visualEffort=f.visualState.effort;
+    // Separate only at spawn. Never clip a live stroke or reset momentum at contact.
+    if(dt)return;
+    for(let i=0;i<96;i++){
+      const bounds=this.renderedBounds(f);let closest={gap:Infinity};
+      for(const o of this.obstacles)if(o.kind==='rock'){const c=this.obstacleContact(bounds,o,0,3);if(c.gap<closest.gap)closest=c;}
+      if(closest.gap>=2.5)break;
+      f.model.position.addScaledVector(new T.Vector3(closest.x,closest.y,closest.z).normalize(),Math.min(.25,2.5-closest.gap));
+    }
+    f.g.position.copy(f.model.position);
+  }
+  avoidRenderedRocks(f,desired){
+    const constraints=[],rotation=f.model.quaternion.clone(),state=f.visualState;
+    // Evaluate the coming turn and half-stroke as well as the current pose.
+    // A turning tail can approach a wall even when root velocity points away.
+    for(const horizon of [0,1.5,3]){
+      if(horizon){const e=new T.Euler().setFromQuaternion(rotation,'YZX');e.y+=f.yawVelocity*horizon;e.z+=clamp(f.pitchVelocity*horizon,-.2,.2);f.model.quaternion.setFromEuler(e);f.visualState={...state,phase:state.phase+horizon*(1+f.speed*1.6)};}
+      const bounds=this.renderedBounds(f);
+      for(const o of this.obstacles){if(o.kind!=='rock')continue;
+        const c=this.obstacleContact(bounds,o,0,5);
+        if(c.gap>5)continue;
+        const normal=new T.Vector3(c.x,c.y,c.z).normalize();
+        constraints.push({normal,minimum:(2.4-c.gap)*.65});
+      }
+    }
+    f.model.quaternion.copy(rotation);f.visualState=state;
+    // Brake and round the rock well before the tail/pectoral sweep reaches it.
+    // Velocity is filtered afterwards; the body and tail keep their own clocks.
+    constraints.push({normal:new T.Vector3(0,-1,0),minimum:(f.model.position.y-f.maxY+.2)*.8});
+    for(let pass=0;pass<3;pass++)for(const {normal,minimum} of constraints){
+      const along=desired.dot(normal);if(along<minimum)desired.addScaledVector(normal,minimum-along);
+    }
+  }
+  residentBounds(f,rendered=false){
+    // Include the dorsal, pectoral tips and caudal fin, not just the torso.
+    // Keep the torso round instead of extending the dorsal height below the belly.
+    // The body capsules alone are narrower than the shark's long swept wings.
+    const key=rendered?'renderBounds':'simulationResidentBounds',g=rendered?f.model:f.g;
+    const proxy=f[key]||(f[key]={predator:true,residentEnvelope:true,g,segments:Array.from({length:f.segments.length+4},()=>({g,axis:new T.Vector3(),offset:new T.Vector3(),back:0,front:1,radius:f.size*.16,vertical:1}))});
+    proxy.velocity=rendered?(f.renderVelocity||f.velocity):f.velocity;if(!rendered&&proxy.version===f.boundsVersion)return proxy;proxy.version=f.boundsVersion;
+    const state=rendered?f.visualState:null,effort=state?.effort??(rendered?(f.g.userData.swim?.effort.value??f.effort):f.effort),bendPitch=state?.bendPitch??f.bendPitch,bendYaw=state?.bendYaw??f.bendYaw,phase=state?.phase??f.tailPhase;
+    const k=Math.hypot(bendPitch,bendYaw),center=x=>{const d=Math.max(0,.45-x),along=k>.001?Math.sin(d*k)/k:d,across=k>.001?(1-Math.cos(d*k))/(k*k):.5*d*d;return new T.Vector3(x+d-along,bendPitch*across,bendYaw*across+Math.sin(phase+x*2.5)*Math.pow(Math.max(0,.25-x),2)*.065*effort);};
+    const bounds=[f.back/f.size,-.95,-.25,.45,f.front/f.size];
+    for(let i=0;i<f.segments.length;i++){const source=f.segments[i],target=proxy.segments[i];target.offset.copy(center(bounds[i])).multiplyScalar(f.size).applyQuaternion(g.quaternion);target.axis.copy(center(bounds[i+1])).multiplyScalar(f.size).applyQuaternion(g.quaternion).sub(target.offset);target.front=target.axis.length();target.axis.divideScalar(target.front);target.radius=source.radius;target.vertical=1;target.velocity=proxy.velocity;}
+    const deform=([x,y,z])=>{const tangent=center(x+.002).sub(center(x-.002)).normalize(),q=new T.Quaternion().setFromUnitVectors(new T.Vector3(1,0,0),tangent);return new T.Vector3(0,y,z).applyQuaternion(q).add(center(x)).multiplyScalar(f.size).applyQuaternion(g.quaternion);};
+    const fins=[[[.08,-.07,-.25],[-.49,-.145,-.68]],[[.08,-.07,.25],[-.49,-.145,.68]],[[-1.96,.54,0],[-1.84,-.30,0]],[[.12,.26,0],[-.22,.64,0]]];
+    fins.forEach(([a,b],i)=>{const segment=proxy.segments[f.segments.length+i];segment.offset.copy(deform(a));segment.axis.copy(deform(b)).sub(segment.offset);segment.front=segment.axis.length();segment.axis.divideScalar(segment.front);segment.velocity=proxy.velocity;});
+    return proxy;
+  }
+  renderedBounds(f){return this.residentBounds(f,true);}
+  resolveResidentContacts(){
+    const drifting=this.obstacles.filter(o=>o.kind==='jellyfish'&&o.displace);if(!drifting.length)return;const displaced=new Map(),visible=this.predators.filter(f=>f.id<this.count).map(f=>this.renderedBounds(f));
+    // Most contact is handled as an early pressure wake. A small additional
+    // clearance projection handles a fast fin sweep or two sharks meeting at
+    // once, so a per-step drift limit cannot leave the jelly inside a fin.
+    for(let pass=0;pass<4;pass++)for(const body of visible)for(const o of drifting){const c=this.obstacleContact(body,o),used=displaced.get(o.owner)||0;if(c.gap>=1.2)continue;
+      const gentle=Math.min(Math.max(0,.12-used),1.2-c.gap),clearance=Math.max(0,.08-c.gap)*2,shift=Math.min(.12,Math.max(gentle,clearance));if(shift<=.00001)continue;
+      const normal=Math.hypot(c.x,c.y,c.z),nx=normal>.02?c.x/normal:-body.segments[0].axis.z,ny=normal>.02?c.y/normal:0,nz=normal>.02?c.z/normal:body.segments[0].axis.x;
+      o.displace(-nx*shift,-nz*shift,-ny*shift);displaced.set(o.owner,used+shift);
+    }
+  }
+  update(dt,foods){this.accumulator=Math.min(this.accumulator+dt,.2);while(this.accumulator>=this.stepSize){this.step(this.stepSize,foods);this.accumulator-=this.stepSize;for(let i=0;i<this.count;i++)this.syncModel(this.fish[i],this.stepSize);this.resolveResidentContacts();}}
   audit(){let minGap=Infinity,minUp=1,minSpeed=Infinity,maxSpeed=0,pursuers=0,bites=0;const up=new T.Vector3(0,1,0),modes={};
     for(let i=0;i<this.count;i++){const f=this.fish[i];minUp=Math.min(minUp,up.clone().applyQuaternion(f.g.quaternion).y);minSpeed=Math.min(minSpeed,f.speed);maxSpeed=Math.max(maxSpeed,f.speed);pursuers+=f.feeding?1:0;bites+=f.bites||0;modes[f.mode]=(modes[f.mode]||0)+1;for(let j=i+1;j<this.count;j++)minGap=Math.min(minGap,measure(f,this.fish[j]).gap);}
-    return {minGap,minUp,overlaps:minGap<-.01?1:0,fish:this.count,behavior:{pursuers,bites,minSpeed,maxSpeed,modes,playChases:this.predators.reduce((n,f)=>n+f.playCount,0),playing:this.predators.filter(f=>f.id<this.count&&f.playTarget).map(f=>({shark:f.id,target:f.playTarget.id,until:f.playUntil}))}};
+    let jellyfishGap=Infinity,rockGap=Infinity;const jellies=this.obstacles.filter(o=>o.kind==='jellyfish'),rocks=this.obstacles.filter(o=>o.kind==='rock');for(const f of this.predators){if(f.id>=this.count||(!jellies.length&&!rocks.length))continue;const visible=this.renderedBounds(f);for(const o of jellies)jellyfishGap=Math.min(jellyfishGap,this.obstacleGap(visible,o));for(const o of rocks)rockGap=Math.min(rockGap,this.obstacleGap(visible,o));}
+    return {minGap,minUp,rockGap:Number.isFinite(rockGap)?rockGap:null,jellyfishGap:Number.isFinite(jellyfishGap)?jellyfishGap:null,overlaps:minGap<-.01?1:0,fish:this.count,behavior:{pursuers,bites,minSpeed,maxSpeed,modes,playChases:this.predators.reduce((n,f)=>n+f.playCount,0),playing:this.predators.filter(f=>f.id<this.count&&f.playTarget).map(f=>({shark:f.id,target:f.playTarget.id,until:f.playUntil}))}};
   }
 }
 globalThis.AquariumMotion=AquariumMotion;

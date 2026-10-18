@@ -33,13 +33,8 @@ float ripples=sin(p.x*.8+p.y*7.+sin(p.x*.5)*2.);
 diffuseColor.rgb*=.87+grain*.13+ripples*.035;diffuseColor.rgb+=vec3(.18,.28,.20)*caustic;`);};
 const sandMesh=new T.Mesh(sandGeo,sandMat);scene.add(sandMesh);
 // Large sloping rock gardens frame a deliberately open swimming space.
-const rockGeo=new T.IcosahedronGeometry(1,2);const rp=rockGeo.attributes.position;
-for(let i=0;i<rp.count;i++){const x=rp.getX(i),y=rp.getY(i),z=rp.getZ(i);let k=1+.1*Math.sin(x*8+y*5)*Math.cos(z*6);rp.setXYZ(i,x*k,y*k,z*k);}rockGeo.computeVertexNormals();
-const rockInstances=[];
 const rockMats=['#365b58','#54736a','#6d8070','#314e4e'].map(c=>new T.MeshStandardMaterial({color:c,roughness:.98,flatShading:true}));
-function rock(x,y,z,sx,sy,sz){let m=new T.Mesh(rockGeo,rockMats[Math.floor(random()*4)]);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.rotation.set(range(-.3,.3),range(0,6),range(-.3,.3));rockInstances.push(m);return m;}
-rock(10,-3.7,-3,4,2.5,2.6);rock(13,-2.8,-5,3.3,4.2,3);rock(7.8,-4,-1,2,1.5,2);rock(-14,-4,-4,2,1.1,2);rock(11,-4.1,2,2.4,1.1,1.8);
-for(let i=0;i<65;i++){let x=range(-19,19),z=range(-10,10),s=range(.08,.38);rock(x,-4.53,z,s,s*.55,s*.8);}
+const {geometry:rockGeo,meshes:rockInstances,obstacles:rockObstacles}=AQUARIUM_REEF.makeRockGarden(rockMats,random);
 // Batch all stones by material: four draw calls for the entire rock garden.
 for(const mat of rockMats){const stones=rockInstances.filter(m=>m.material===mat);const batch=new T.InstancedMesh(rockGeo,mat,stones.length);stones.forEach((m,i)=>{m.updateMatrix();batch.setMatrixAt(i,m.matrix);});batch.instanceMatrix.needsUpdate=true;scene.add(batch);}
 // Each meadow is merged into one geometry; the GPU bends every blade in the current.
@@ -63,7 +58,9 @@ let geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAt
 float h=max(0.,position.y+4.55);transformed.x+=sin(uTime*.6+position.x*.4+position.z)*h*h*.025;`);};scene.add(new T.Mesh(geo,mat));}fernGarden();
 // One immutable record per fish species drives the tank, thumbnails and live field guide.
 const speciesCatalog=window.AQUARIUM_SPECIES,reef=window.AQUARIUM_REEF;
-const environment=reef.decorate(scene),reefLife=reef.populate(scene,environment.obstacles),guideCatalog=[...speciesCatalog,...reef.species.filter(s=>s.id!=='cleaner-shrimp')];
+const environment=reef.decorate(scene);
+environment.obstacles.push(...rockObstacles);
+const reefLife=reef.populate(scene,environment.obstacles),guideCatalog=[...speciesCatalog,...reef.species.filter(s=>s.id!=='cleaner-shrimp')];
 function profile(species){return {height:species.height,depth:species.depth};}
 // Reef-shark proportions: https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/blacktip-reef-shark/
 // Joined cubic sections separate the slender shoulders, flat rostrum and narrow caudal peduncle.
@@ -382,7 +379,7 @@ let tabActive=true;document.addEventListener('visibilitychange',()=>{tabActive=!
 let frameCount=0,frameTime=0,perfFrames=0,perfTime=0,first=true;
 function animate(){requestAnimationFrame(animate);let rawDt=Math.min(clock.getDelta(),.05);if(!tabActive)return;let dt=paused?0:rawDt*flow;elapsed+=dt;time.value=elapsed;
 if(themeTarget){let a=1-Math.exp(-rawDt*2);scene.background.lerp(colorTemp.set(themeTarget.bg),a);scene.fog.color.copy(scene.background);ambient.color.lerp(colorTemp.set(themeTarget.sky),a);sun.color.lerp(colorTemp.set(themeTarget.sun),a);sun.intensity=T.MathUtils.lerp(sun.intensity,themeTarget.power,a);renderer.toneMappingExposure=T.MathUtils.lerp(renderer.toneMappingExposure,themeTarget.exposure,a);rayMat.uniforms.uColor.value.lerp(colorTemp.set(themeTarget.ray),a);}
-if(dt){motion.update(dt,foods);reefLife.update(elapsed);dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
+if(dt){reefLife.update(elapsed);motion.update(dt,foods);dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
 for(let i=foods.length-1;i>=0;i--){let f=foods[i];f.life+=dt;f.mesh.position.y-=f.speed*dt;f.mesh.position.x+=Math.sin(elapsed+f.life)*dt*.025;const x=f.mesh.position.x,z=f.mesh.position.z,ground=AquariumMotion.floorHeight(x,z);if(f.mesh.position.y<ground+.06)f.mesh.position.y=ground+.06;if(f.eaten||f.life>24){scene.remove(f.mesh);foods.splice(i,1);}}}
 let framing=innerWidth<800?1.26:1;let camX=Math.sin(state.yaw)*state.zoom,camY=2.5+state.pitch*22,camZ=Math.cos(state.yaw)*state.zoom*framing;camera.position.lerp(v1.set(camX,camY,camZ),1-Math.exp(-rawDt*3));camera.lookAt(0,.25,0);renderer.render(scene,camera);renderGuide(rawDt);
 if(first){first=false;$('#loading').style.opacity=0;setTimeout(()=>$('#loading').remove(),1100);}
