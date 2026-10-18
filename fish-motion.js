@@ -67,7 +67,7 @@ class AquariumMotion {
   habitatPoint(f,excursion=false){const h=f.species?.habitat,r=this.random;
     if(!h)return new T.Vector3(-11+r()*22,-1.9+r()*6,-6+r()*11);
     const y=excursion?(h.zone==='bottom'||h.zone==='reef'?-1+r()*2:1+r()*3):h.min+r()*(h.max-h.min);
-    let x=-10+r()*20,z=-5+r()*10;
+    let x=-12+r()*24,z=-6+r()*13;
     if(!excursion&&h.zone==='reef'){x=-9.4+(r()-.5)*1.4;z=(f.id%2?1:-1)*(2+r()*1.6);}
     if(!excursion&&h.zone==='grass'){x=5.5+r()*4;z=-3+r()*5;}
     return new T.Vector3(x,y,z);
@@ -87,13 +87,13 @@ class AquariumMotion {
     if(f.predator){
       // Large sharks take broad circuits behind the smaller residents instead of repeatedly turning at the feeding patch.
       f.patrolAngle=(f.patrolAngle??(Math.PI*.5+f.id*Math.PI))+.65;
-      const a=f.patrolAngle;f.goal.set(Math.sin(a)*12,2+Math.sin(a*.6+f.id)*.7,-5+Math.cos(a)*2.8);f.nextGoal=this.elapsed+14;return;
+      const a=f.patrolAngle;f.goal.set(Math.sin(a)*13.5,2+Math.sin(a*.6+f.id)*.7,-5.5+Math.cos(a)*3.2);f.nextGoal=this.elapsed+14;return;
     }
     // Independent, slowly changing territories replace synchronized trips to the two tank ends.
     if(this.elapsed>f.homeUntil){f.home.copy(this.habitatPoint(f,r()<.16));f.homeUntil=this.elapsed+22+r()*32;}
     const angle=f.yaw+(r()-.5)*2.8,reach=1.8+f.traits.activity*.35+r()*(2+f.traits.activity*.7);
     f.goal.set(p.x+Math.cos(angle)*reach,p.y+(r()-.5)*3.8,p.z-Math.sin(angle)*reach);
-    f.goal.lerp(f.home,.16+r()*.17);f.goal.x=clamp(f.goal.x,-12.5,12.5);f.goal.z=clamp(f.goal.z,-6.8,5.8);
+    f.goal.lerp(f.home,.16+r()*.17);f.goal.x=clamp(f.goal.x,-14.5,14.5);f.goal.z=clamp(f.goal.z,-8.2,9.6);
     const h=f.species?.habitat;
     if(h){f.goal.lerp(f.home,.45);f.goal.y=clamp(f.goal.y,h.min,h.max);if(h.zone==='reef'&&r()<.6){f.goal.set(-9.6,-2.45,p.z>0?-3.8:3.8);}}
     f.goal.y=clamp(f.goal.y,Math.max(-3.4,this.minY(f,f.goal.x,f.goal.z)+.25),h?.zone==='surface'?7.6:5.2);
@@ -130,7 +130,7 @@ class AquariumMotion {
     if(satisfied||food){f.activity='depart';f.activityFactor=1.4;f.activityUntil=this.elapsed+3+this.random()*3;f.cooldownUntil=this.elapsed+(satisfied?4+this.random()*6:.6+this.random());
       // Leave on different headings after a bite; other fish get a turn at the food.
       const angle=f.yaw+(f.id%2?1:-1)*(.7+this.random()*1.2),p=f.g.position,reach=4+this.random()*4;
-      f.goal.set(clamp(p.x+Math.cos(angle)*reach,-12,12),clamp(p.y+(this.random()-.5)*2,Math.max(-2.5,this.minY(f)+.3),5),clamp(p.z-Math.sin(angle)*reach,-6.5,5.8));f.nextGoal=f.activityUntil;
+      f.goal.set(clamp(p.x+Math.cos(angle)*reach,-14,14),clamp(p.y+(this.random()-.5)*2,Math.max(-2.5,this.minY(f)+.3),5),clamp(p.z-Math.sin(angle)*reach,-8,9.6));f.nextGoal=f.activityUntil;
     }
   }
   prepareMeals(foods){
