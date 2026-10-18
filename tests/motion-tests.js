@@ -4,7 +4,7 @@
 const T=globalThis.THREE;
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 function seeded(seed){return ()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};}
-function fixture(count=12,seed=11042,sharks=false){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=[0,5,1,5,2,5,3,5,4,5];
+function fixture(count=12,seed=11042,sharks=false){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=AQUARIUM_FISH_PLAN;
   for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<2?6:plan[(sharks?i-2:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
 }
 function speciesFixture(species,count=1,seed=42){const fish=[],engine=new AquariumMotion(fish,seeded(seed));for(let i=0;i<count;i++)engine.register({g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1});engine.setCount(count);return {fish,engine};}
@@ -16,7 +16,43 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
   await test('图鉴五项属性完整，鲨鱼最危险、最独处，灯鱼最聚群',()=>{
     for(const species of AQUARIUM_SPECIES)for(const key of ['size','schooling','danger','activity','speed'])assert(Number.isInteger(species.traits[key])&&species.traits[key]>=1&&species.traits[key]<=5,`${species.name} 缺少有效属性 ${key}`);
     const shark=AQUARIUM_SPECIES.find(s=>s.predator),tetra=AQUARIUM_SPECIES.find(s=>s.kind===3),active=AQUARIUM_SPECIES.find(s=>s.id==='tidal-swallow'),quiet=AQUARIUM_SPECIES.find(s=>s.id==='moon-angelfish');
-    assert(shark.traits.schooling===1&&shark.traits.danger===5,'鲨鱼属性未设为最低聚集、最高危险');assert(tetra.traits.schooling===5&&tetra.size===Math.min(...AQUARIUM_SPECIES.map(s=>s.size)),'最小鱼未设为最高聚集');assert(active.traits.activity===5&&quiet.traits.activity===1,'鱼种活跃程度未区分');assert(active.speed===Math.max(...AQUARIUM_SPECIES.map(s=>s.speed)),'最活跃鱼种的实际速度不够快');
+    assert(shark.traits.schooling===1&&shark.traits.danger===5,'鲨鱼属性未设为最低聚集、最高危险');assert(tetra.traits.schooling===5&&tetra.size===Math.min(...AQUARIUM_SPECIES.map(s=>s.size)),'最小鱼未设为最高聚集');assert(active.traits.activity===5&&quiet.traits.activity===1,'鱼种活跃程度未区分');const fastest=AQUARIUM_SPECIES.find(s=>s.id==='silver-dart');assert(fastest.speed===Math.max(...AQUARIUM_SPECIES.map(s=>s.speed))&&fastest.speed>active.speed*2,'电光银梭没有独立的最高速度');
+  });
+  await test('电光银梭快速抵达不同地点，每次在附近休息后再次冲刺',()=>{
+    const species=AQUARIUM_SPECIES.find(s=>s.id==='silver-dart'),cases=[];
+    for(const fps of [25,60])for(const seed of [42,11042,2026]){
+      const {engine,fish}=speciesFixture(species,1,seed),f=fish[0];let rests=0,dashes=0,restFrames=0,peak=0,maxRestRadius=0,maxAcceleration=0,lastActivity=f.activity,lastRest=null;
+      let p=f.model.position.clone(),v=f.renderVelocity.clone();
+      const sync=engine.syncModel.bind(engine);engine.syncModel=(f,dt,...args)=>{sync(f,dt,...args);if(!dt)return;const next=f.model.position.clone().sub(p).divideScalar(dt);maxAcceleration=Math.max(maxAcceleration,next.clone().sub(v).length()/dt);p.copy(f.model.position);v.copy(next);};
+      for(let i=0;i<fps*180;i++){
+        engine.update(1/fps,[]);peak=Math.max(peak,f.renderVelocity.length());
+        if(f.activity!==lastActivity){if(f.activity==='rest'){rests++;assert(f.activityUntil-engine.elapsed>=23.9&&f.activityUntil-engine.elapsed<=42.01,'休息时间不是 24–42 秒');if(lastRest)assert(lastRest.distanceTo(f.restCenter)>6,'没有游到另一个地点');lastRest=f.restCenter.clone();}else if(f.activity==='dash')dashes++;lastActivity=f.activity;}
+        if(f.activity==='rest')restFrames++;
+        if(f.activity==='rest'&&engine.elapsed-f.restStarted>1)maxRestRadius=Math.max(maxRestRadius,f.model.position.distanceTo(f.restCenter));
+        assert(Number.isFinite(f.speed)&&f.g.position.y<f.maxY+.01,'冲刺产生无效姿态或越过水面');
+      }
+      assert(rests>=3&&dashes>=3,`没有反复完成冲刺和休息：${rests}/${dashes}`);assert(peak>9,'没有达到爆发冲刺速度');assert(maxRestRadius<.6,`休息时游离停留点：${maxRestRadius}`);assert(maxAcceleration<=60.001,`冲刺急停产生速度跳变：${maxAcceleration}`);assert(restFrames/(fps*180)>.8,'没有将绝大多数时间用于休息');cases.push({fps,seed,rests,dashes,restFraction:restFrames/(fps*180),peak,maxRestRadius,maxAcceleration});
+    }return cases;
+  });
+  await test('电光银梭数量稀少、体型缩小，起步四分之一秒内形成直线爆发',()=>{
+    const counts=[14,26,34,42,54].map(n=>AQUARIUM_FISH_PLAN.slice(0,n-2).filter(i=>AQUARIUM_SPECIES[i].id==='silver-dart').length);assert(JSON.stringify(counts)===JSON.stringify([1,2,2,2,3]),'电光银梭占比过高');
+    const species=AQUARIUM_SPECIES.find(s=>s.id==='silver-dart');assert(species.size<.7,'体型仍然过大');const cases=[];
+    for(const fps of [25,60]){const {engine,fish}=speciesFixture(species),f=fish[0];position(engine,f,0,3,0);f.speed=.035;f.velocity.set(.035,0,0);f.smoothSteer.set(1,0,0);engine.chooseGoal(f);f.goal.set(12,3,0);engine.syncModel(f,0,true);let launched=null,quarterSpeed=0,firstSecond=null;
+      for(let i=0;i<fps*4;i++){engine.update(1/fps,[]);if(f.burstLaunched&&launched===null)launched=engine.elapsed;if(launched!==null&&engine.elapsed-launched<.26)quarterSpeed=Math.max(quarterSpeed,f.renderVelocity.length());if(firstSecond===null&&launched!==null&&engine.elapsed-launched>=1)firstSecond=f.model.position.clone();}
+      assert(quarterSpeed>8,'起步仍被慢速平滑拖住');assert(firstSecond&&firstSecond.x>7&&Math.abs(firstSecond.z)<.2,'没有明显沿朝向向前冲出的感觉');assert(f.activity==='rest','短促冲刺后没有收住并休息');cases.push({fps,quarterSpeed,firstSecond:firstSecond.toArray()});
+    }return {counts,cases};
+  });
+  await test('电光银梭警戒余波不阻止刹停，近距离危险才打断长休息',()=>{
+    const species=AQUARIUM_SPECIES.find(s=>s.id==='silver-dart'),{engine,fish}=speciesFixture(species),f=fish[0];position(engine,f,0,3,0);f.activity='brake';f.brakeDirection=f.axis.clone();f.speed=8;f.velocity.copy(f.axis).multiplyScalar(8);f.fear=.4;engine.syncModel(f,0,true);advance(engine,.6);
+    assert(f.fear>.08,'警戒余波场景没有覆盖到');assert(f.activity==='rest'&&f.renderVelocity.length()<.2,'轻度警戒导致持续巡游，无法刹停');
+    const other=speciesFixture(AQUARIUM_SPECIES[6]),shark=other.fish[0],g=new T.Group();other.engine.register({g,species,kind:species.kind,size:species.size,direction:1});other.engine.setCount(2);const dart=other.fish[1];position(other.engine,shark,0,3,0);position(other.engine,dart,0,3,4,-Math.PI/2);dart.speed=.035;dart.velocity.copy(dart.axis).multiplyScalar(.035);other.engine.restBurst(dart);other.engine.syncModel(dart,0,true);let peak=0;
+    advance(other.engine,2,[],()=>{peak=Math.max(peak,dart.renderVelocity.length());});assert(peak>8&&dart.g.position.z>7,'迫近的鲨鱼没有触发一次短促逃离');return {residualFear:f.fear,stoppedSpeed:f.renderVelocity.length(),escapePeak:peak};
+  });
+  await test('多条电光银梭独立冲刺休息，混游时持续避开鱼群与礁石',()=>{
+    const {engine,fish}=fixture(34,11042,true),garden=AQUARIUM_REEF.makeRockGarden(Array.from({length:4},()=>new T.MeshBasicMaterial()),seeded(11042)),environment=AQUARIUM_REEF.decorate(new T.Scene());engine.obstacles=[...environment.obstacles,...garden.obstacles];engine.resolve(48);for(const f of fish)engine.syncModel(f,0,true);
+    const sprinters=fish.filter(f=>f.species.id==='silver-dart');let minGap=Infinity,minRock=Infinity,independent=0,rests=0,peak=0;
+    advance(engine,70,[],frame=>{if(frame%30)return;const states=new Set(sprinters.map(f=>f.activity));if(states.size>1)independent++;rests+=sprinters.filter(f=>f.activity==='rest').length;for(const f of sprinters){peak=Math.max(peak,f.renderVelocity.length());for(const o of engine.obstacles)minRock=Math.min(minRock,engine.obstacleGap(f,o));}minGap=Math.min(minGap,engine.audit().minGap);});
+    assert(sprinters.length>=2&&independent>10&&rests>10,'新鱼同步冲刺或从不休息');assert(peak>4,'混游时没有高速冲刺');assert(minGap>-.015&&minRock>-.015,`高速混游穿模：鱼群 ${minGap}，礁石 ${minRock}`);return {sprinters:sprinters.length,independent,rests,peak,minGap,minRock};
   });
   await test('高聚集灯鱼主动靠拢，并保持共同游动方向',()=>{
     const cases=[];for(const schooling of [1,5]){const base=AQUARIUM_SPECIES.find(s=>s.kind===3),species={...base,traits:{...base.traits,schooling}},{engine,fish}=speciesFixture(species,12);
@@ -35,7 +71,7 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     engine.steerFish=f=>{f.steer.set(1,0,0);f.desiredSpeed=f.cruise;};const before=engine.audit().minGap;advance(engine,10);const after=engine.audit().minGap;assert(after>before+2,'鲨鱼没有主动拉开同类间距');return {before,after};
   });
   await test('普通鱼在鲨鱼碰撞范围之外就警觉并加速远离',()=>{
-    const cases=[];for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator)){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES.find(s=>s.predator));const f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(2);position(engine,fish[0],0,1,0);position(engine,f,0,1,7.5,Math.PI/2);const before=engine.audit().minGap;let fear=0,speed=0;advance(engine,6,[],()=>{fear=Math.max(fear,f.fear);speed=Math.max(speed,f.speed);});assert(before>4,'起始位置没有在碰撞范围之外');assert(fear>.18&&speed>f.cruise*1.4,`${species.name} 对鲨鱼不够警觉`);cases.push({id:species.id,fear,speed});}return cases;
+    const cases=[];for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator)){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES.find(s=>s.predator));const f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(2);position(engine,fish[0],0,1,0);position(engine,f,0,1,7.5,Math.PI/2);const before=engine.audit().minGap;let fear=0,speed=0;advance(engine,6,[],()=>{fear=Math.max(fear,f.fear);speed=Math.max(speed,f.speed);});assert(before>4,'起始位置没有在碰撞范围之外');assert(fear>.18,`${species.name} 没有提前警觉`);if(species.locomotion!=='burst-rest')assert(speed>f.cruise*1.4,`${species.name} 没有提前加速避鲨`);cases.push({id:species.id,fear,speed});}return cases;
   });
   await test('转向时后半身滞后，左右弯曲对称，直游后平滑恢复',()=>{
     const bends=[];
@@ -83,7 +119,7 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator))for(const sign of [-1,1]){
       const random=seeded(42),fish=[],engine=new AquariumMotion(fish,random),f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(1);position(engine,f,0,1,0);
       const food=pellet(0,1+sign*1.7,0),foods=[food];let pitched=false,last=f.g.position.clone();
-      advance(engine,8,foods,()=>{const movement=f.g.position.clone().sub(last),slip=Math.abs(movement.y-f.velocity.y/60);maxVerticalSlip=Math.max(maxVerticalSlip,slip);assert(slip<1e-7,'位置被独立的升降或边界纠正拖动');assert(f.velocity.clone().cross(f.axis).length()<1e-7,'实际游动偏离身体方向');if(Math.abs(f.velocity.y)>.3){assert(Math.abs(f.pitch)>.1,'水平鱼头快速升降');pitched=true;}last.copy(f.g.position);});
+      advance(engine,8,foods,()=>{const movement=f.g.position.clone().sub(last),slip=Math.abs(movement.y-f.velocity.y/60);maxVerticalSlip=Math.max(maxVerticalSlip,slip);assert(slip<1e-7,'位置被独立的升降或边界纠正拖动');assert(f.velocity.clone().cross(f.axis).length()<1e-7,'实际游动偏离身体方向');if(movement.lengthSq()>1e-10)assert(Math.abs(movement.dot(f.axis))/movement.length()>.99999,'实际位移没有沿身体方向');if(Math.abs(f.pitch)>.1&&Math.abs(movement.y)*60>.3)pitched=true;last.copy(f.g.position);});
       assert(food.eaten,'取消独立升降后吃不到上下方的食物');assert(pitched,'没有通过俯仰接近食物');cases++;
     }return {cases,maxVerticalSlip};
   });
@@ -122,7 +158,7 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     while(foods.length&&time<8){engine.update(1/60,foods);if(foods.length)food.mesh.position.y=Math.max(AquariumMotion.floorHeight(fx,fz)+.06,food.mesh.position.y-food.speed/60);time+=1/60;}
     assert(food.eaten,`${name} 的鱼饵仍在可达范围之外`);const before=f.g.position.clone();engine.update(1/60,foods);assert(f.g.position.distanceTo(before)<.15,`${name} 吃完后发生边界瞬移`);cases.push({name,seconds:time});
   }return cases;});
-  await test('六种鱼在前方、头顶、身下和过近位置都真正吃到鱼饵',()=>{let total=0,maxTime=0;
+  await test('七种鱼在前方、头顶、身下和过近位置都真正吃到鱼饵',()=>{let total=0,maxTime=0;
     for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator))for(const [dx,dy] of [[4,0],[4,1.7],[4,-1.7],[0,1.7],[0,-1.2],[.25,0],[-.6,.2]]){
       const random=seeded(42),fish=[],engine=new AquariumMotion(fish,random),f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(1);position(engine,f,0,1,0);const food=pellet(dx,1+dy,0),foods=[food];let time=0;
       while(foods.length&&time<6){engine.update(1/60,foods);if(foods.length)food.mesh.position.y=Math.max(AquariumMotion.floorHeight(dx,0)+.06,food.mesh.position.y-food.speed/60);time+=1/60;}

@@ -46,7 +46,7 @@ class AquariumMotion {
     if(f.predator)f.segments=Array.from({length:4},()=>({g:f.g,id:f.id,velocity:null,axis:new T.Vector3(),offset:new T.Vector3(),radius:f.radius+f.size*.04,vertical:f.vertical,back:0,front:1}));
     f.goal=new T.Vector3();f.steer=new T.Vector3();f.axis=new T.Vector3();f.smoothSteer=new T.Vector3();f.home=new T.Vector3();
     f.cruise=(f.species?f.species.speed:(f.kind===3?.85:.58))*(.93+this.random()*.14);
-    f.speed=f.cruise;f.wanderPhase=this.random()*Math.PI*2;f.tailPhase=f.phase||this.random()*Math.PI*2;f.effort=.6;
+    f.speed=f.species?.locomotion==='burst-rest'?.035:f.cruise;f.wanderPhase=this.random()*Math.PI*2;f.tailPhase=f.phase||this.random()*Math.PI*2;f.effort=.6;
     const anal=f.species?Math.max(...f.species.anal.map(p=>p[1])):.25;
     const dorsal=f.species?Math.max(...f.species.dorsal.map(p=>p[1])):.4;f.maxY=10-((f.species?f.species.height:.5)+dorsal)*f.size-.12;
     f.floorClearance=f.kind===2?1.9*f.size+.12:((f.species?f.species.height:.5)+anal)*f.size+.10;
@@ -57,7 +57,7 @@ class AquariumMotion {
   }
   minY(f,x=f.g.position.x,z=f.g.position.z){const clearance=Math.max(f.floorClearance*Math.cos(Math.min(1.4,Math.abs(f.pitch))),f.nose*Math.max(0,-Math.sin(f.pitch))+.04);
     return AquariumMotion.floorHeight(x,z)+clearance;}
-  chooseActivity(f){if(f.predator){f.activity='cruise';f.activityFactor=.85+this.random()*.25;f.activityUntil=this.elapsed+6+this.random()*7;this.chooseGoal(f);return;}const r=this.random(),activity=(f.traits.activity-1)/4,hover=.58-.56*activity,glide=hover+.30-.18*activity,dart=.40*activity*activity;
+  chooseActivity(f){if(f.species?.locomotion==='burst-rest'){this.chooseGoal(f);return;}if(f.predator){f.activity='cruise';f.activityFactor=.85+this.random()*.25;f.activityUntil=this.elapsed+6+this.random()*7;this.chooseGoal(f);return;}const r=this.random(),activity=(f.traits.activity-1)/4,hover=.58-.56*activity,glide=hover+.30-.18*activity,dart=.40*activity*activity;
     if(r<hover){f.activity='hover';f.activityFactor=.015+this.random()*.065;f.activityUntil=this.elapsed+1.5+(1-activity)*3+this.random()*3;}
     else if(r<glide){f.activity='glide';f.activityFactor=.18+this.random()*.3;f.activityUntil=this.elapsed+1.5+this.random()*3.5;}
     else if(r>1-dart){f.activity='dart';f.activityFactor=1.4+this.random()*.55;f.activityUntil=this.elapsed+.7+this.random()*1.3;}
@@ -84,6 +84,18 @@ class AquariumMotion {
     }
   }
   chooseGoal(f){const r=this.random,p=f.g.position;
+    if(f.species?.locomotion==='burst-rest'){
+      // Pick a different destination, with room to accelerate and brake.
+      const h=f.species.habitat;let best=null,bestDistance=0;
+      for(let i=0;i<24;i++){
+        const angle=f.yaw+(r()-.5)*Math.PI*2,reach=9+r()*7;
+        const q=new T.Vector3(clamp(p.x+Math.cos(angle)*reach,-15,15),clamp(p.y+(r()-.5)*2.8,h.min+.3,h.max-.3),clamp(p.z-Math.sin(angle)*reach,-5,12));
+        const clear=this.obstacles.every(o=>{const d=q.clone().sub(o.center);if(!o.radii)return d.length()>o.radius+f.size*1.5;if(o.inverseRotation)d.applyQuaternion(o.inverseRotation);return Math.hypot(d.x/(o.radii.x+f.size*1.5),d.y/(o.radii.y+f.size*1.5),d.z/(o.radii.z+f.size*1.5))>1;});
+        const distance=q.distanceTo(p);if(clear&&distance>bestDistance){best=q;bestDistance=distance;}if(clear&&distance>8)break;
+      }
+      f.goal.copy(best||new T.Vector3(-Math.sign(p.x||1)*8,3.6,5));
+      f.activity='dash';f.activityUntil=this.elapsed+12;f.nextGoal=f.activityUntil;f.burstLaunched=false;return;
+    }
     if(f.predator){
       // Large sharks take broad circuits behind the smaller residents instead of repeatedly turning at the feeding patch.
       f.patrolAngle=(f.patrolAngle??(Math.PI*.5+f.id*Math.PI))+.65;
@@ -104,7 +116,7 @@ class AquariumMotion {
     let clear=true;for(let j=0;j<limit;j++)if(measure(f,this.fish[j],0,.3).gap<0){clear=false;break;}if(clear&&!this.obstacles.some(o=>this.obstacleGap(f,o)<.12))return;
   }}
   setCount(count){const before=this.count;this.count=count;
-    for(let i=before;i<count;i++){const f=this.fish[i];this.place(f,i);f.home.copy(f.g.position);this.chooseGoal(f);}
+    for(let i=before;i<count;i++){const f=this.fish[i];this.place(f,i);f.home.copy(f.g.position);if(f.species?.locomotion==='burst-rest')this.restBurst(f,true);else this.chooseGoal(f);}
     for(let i=count;i<before;i++)this.releaseFood(this.fish[i],false);this.resolve(12);for(let i=before;i<count;i++)this.syncModel(this.fish[i],0,true);
   }
   orient(f){f.g.rotation.set(f.roll,f.yaw,f.pitch,'YZX');f.axis.set(Math.cos(f.yaw)*Math.cos(f.pitch),Math.sin(f.pitch),-Math.sin(f.yaw)*Math.cos(f.pitch));this.updateSpineBounds(f);}
@@ -184,6 +196,8 @@ class AquariumMotion {
       const facing=distance>.001?f.axis.dot(f.steer)/distance:1;
       f.reverseTarget=remaining<-.08&&mouthDistance>.2&&facing>.85?clamp(remaining*1.6,-.65,0):0;f.mode='feeding';
       if(this.elapsed-f.lastFoodProgress>3.5){if(!food.failedBy)food.failedBy={};food.failedBy[f.id]=this.elapsed+3;this.releaseFood(f,false);}
+    }else if(f.species?.locomotion==='burst-rest'&&f.activity!=='depart'){
+      this.steerBurstRest(f);
     }else{
       f.reverseTarget=0;if(f.activity!=='hover'&&(p.distanceToSquared(goal)<1||this.elapsed>f.nextGoal)){
         if(f.activity==='depart'){goal.copy(p).addScaledVector(f.axis,4);f.nextGoal=f.activityUntil;}else if(!f.predator&&this.random()<(.30-.05*f.traits.activity)){f.activity='hover';f.activityFactor=.08;f.activityUntil=this.elapsed+1+this.random()*2;goal.copy(p).addScaledVector(f.axis,.5);}else this.chooseGoal(f);
@@ -196,15 +210,42 @@ class AquariumMotion {
       f.desiredSpeed=f.cruise*(this.elapsed<f.chewUntil?.55:f.activityFactor)*rhythm;f.mode=f.activity;
     }
     if(f.playTarget){const target=f.playTarget;const q=target.g.position;f.steer.copy(q).addScaledVector(target.velocity,.65).sub(p);f.desiredSpeed=f.cruise*1.65;f.mode='playing';}
-    const length=f.steer.length();if(length>.001)f.steer.multiplyScalar(Math.max(f.feeding?1.2:.18,f.desiredSpeed)/length);
+    const length=f.steer.length();if(length>.001)f.steer.multiplyScalar(Math.max(f.feeding?1.2:f.species?.locomotion==='burst-rest'&&f.activity==='dash'&&!f.burstLaunched?1.6:.18,f.desiredSpeed)/length);
     if(!f.feeding&&f.species?.habitat?.zone!=='reef'&&Math.abs(p.x)>10&&p.z< -1&&p.y<-.6){f.steer.y+=(-.6-p.y)*.5;f.steer.x-=Math.sign(p.x)*.4;}
     const bottom=this.minY(f)+.12;if(p.y<bottom)f.steer.y+=(bottom-p.y)*.9;
     const h=f.species?.habitat;
-    if(!f.feeding&&f.activity!=='depart'&&!f.predator&&h){const low=Math.max(h.min,this.minY(f)+.15),high=h.max;f.steer.y+=(p.y<low?(low-p.y)*.85:p.y>high?(high-p.y)*.9:0);}
+    if(!f.feeding&&f.activity!=='depart'&&!f.predator&&h&&!(f.species?.locomotion==='burst-rest'&&f.activity==='dash'&&!f.burstLaunched)){const low=Math.max(h.min,this.minY(f)+.15),high=h.max;f.steer.y+=(p.y<low?(low-p.y)*.85:p.y>high?(high-p.y)*.9:0);}
     const top=f.feeding?f.maxY:h?.zone==='surface'?8:5.9,side=f.feeding?Math.max(17,Math.abs(f.targetFood.mesh.position.x)+1):17,front=f.feeding?Math.max(6,f.targetFood.mesh.position.z+1):25;
     if(p.y>top)f.steer.y-=(p.y-top)*.9;
     if(p.x>side)f.steer.x-=(p.x-side)*.8;if(p.x< -side)f.steer.x+=(-side-p.x)*.8;
     if(p.z< -9)f.steer.z+=(-9-p.z)*.7;if(p.z>front)f.steer.z-=(p.z-front)*.7;
+  }
+  restBurst(f,initial=false){
+    f.activity='rest';f.burstLaunched=false;f.restCenter=f.g.position.clone();f.restStarted=this.elapsed;
+    f.activityUntil=this.elapsed+(initial?12:24)+this.random()*18;f.nextGoal=f.activityUntil;f.goal.copy(f.restCenter);
+  }
+  steerBurstRest(f){
+    const p=f.g.position;
+    if(!['dash','brake','rest'].includes(f.activity))this.chooseGoal(f);
+    if(f.activity==='dash'&&f.burstLaunched&&(this.elapsed>=f.burstUntil||p.distanceTo(f.goal)<.85)){f.activity='brake';f.brakeDirection=f.axis.clone();}
+    if(f.activity==='brake'&&f.speed<.1&&(f.renderVelocity?.length()||0)<.3)this.restBurst(f);
+    if(f.activity==='rest'){
+      const a=(this.elapsed-f.restStarted)*.12+f.wanderPhase;
+      f.goal.copy(f.restCenter).add(new T.Vector3(Math.cos(a)*.12,Math.sin(a*.7)*.06,Math.sin(a)*.12));
+      f.steer.copy(f.goal).sub(p);
+      f.desiredSpeed=Math.min(.07,f.steer.length()*.25);
+    }else if(f.activity==='brake'){
+      f.steer.copy(f.brakeDirection);f.desiredSpeed=0;
+    }else{
+      f.steer.copy(f.goal).sub(p);
+      // Aim while nearly still, then commit to a short, decisive forward burst.
+      // Increasing top speed alone was being erased by the shared slow follower.
+      const distance=f.steer.length(),facing=f.axis.dot(f.steer)/Math.max(.001,distance);
+      if(!f.burstLaunched&&facing>.994&&Math.abs(f.yawVelocity)<.4&&Math.abs(f.pitch)<.45){f.burstLaunched=true;f.dashStarted=this.elapsed;f.burstUntil=this.elapsed+clamp(distance/(f.cruise*4.2)+.18,.8,1.8);}
+      f.desiredSpeed=f.burstLaunched?Math.min(f.cruise*4.2,Math.sqrt(2*36*Math.max(0,distance-.3))):.035;
+      f.steer.y*=.95;
+    }
+    f.reverseTarget=0;f.mode=f.activity==='dash'&&!f.burstLaunched?'aim':f.activity;
   }
   obstacleContact(f,o,lead=0,proximity=lead?4.5:.025){
     if((o.kind==='jellyfish'||o.kind==='rock')&&f.predator&&!f.residentEnvelope)f=this.residentBounds(f);
@@ -272,9 +313,19 @@ class AquariumMotion {
       if(Math.abs(c.x*shark.axis.x+c.z*shark.axis.z)>.75){const side=f.id%2?1:-1;escapeX+=shark.axis.z*side*weight*.8;escapeZ-=shark.axis.x*side*weight*.8;}
     }
     f.fear+=(threat-f.fear)*(1-Math.exp(-dt*(threat>f.fear?4:1.3)));
+    if(f.species?.locomotion==='burst-rest'&&!f.feeding&&f.activity==='rest'&&threat>=.65){
+      // A close threat warrants one relocation, not repeated flights back to
+      // the resting spot next to the same shark.
+      const away=new T.Vector3(escapeX,escapeY,escapeZ).normalize();
+      f.goal.copy(f.g.position).addScaledVector(away,10);f.goal.x=clamp(f.goal.x,-15,15);f.goal.z=clamp(f.goal.z,-5,12);f.goal.y=clamp(f.goal.y,2.1,5.2);
+      f.activity='dash';f.burstLaunched=true;f.dashStarted=this.elapsed;f.burstUntil=this.elapsed+1.5;f.activityUntil=this.elapsed+12;f.nextGoal=f.activityUntil;
+    }
     if(threat>.08){if(f.targetFood&&threat>.45)this.releaseFood(f,false);
       f.steer.multiplyScalar(1-threat*.95);f.steer.x+=escapeX*5;f.steer.y+=escapeY*2.5;f.steer.z+=escapeZ*5;
     }
+    // Its own burst is already faster than the generic escape cruise. A weak
+    // alarm must not override arrival braking or keep a resting fish cruising.
+    if(f.species?.locomotion==='burst-rest'&&!f.feeding)return;
     if(f.fear>.08){f.desiredSpeed=Math.max(f.desiredSpeed,f.cruise*(1.25+f.fear*1.65));f.mode='avoiding';}
   }
   step(dt,foods){this.elapsed+=dt;this.prepareMeals(foods);
@@ -304,7 +355,8 @@ class AquariumMotion {
       // Keep the chosen turning side for targets directly behind the fish.
       if(Math.abs(delta)>Math.PI-.25)delta=Math.abs(delta)*f.turnSide;
       else if(Math.abs(delta)>.15)f.turnSide=Math.sign(delta);
-      const turnRate=f.predator?.48:f.fear>.15?1.8:f.feeding?2.2:f.activity==='hover'?.45:.75+(f.activity==='dart'?.25:0);
+      const burst=f.species?.locomotion==='burst-rest';
+      const turnRate=f.predator?.48:f.fear>.15?1.8:f.feeding?2.2:burst?(f.activity==='rest'||f.activity==='brake'?.75:2.2):f.activity==='hover'?.45:.75+(f.activity==='dart'?.25:0);
       const desiredTurn=clamp(delta*(f.predator?1.15:f.feeding?4:2.4),-turnRate,turnRate);
       f.yawVelocity+=clamp(desiredTurn-f.yawVelocity,-dt*(f.predator?.6:5),dt*(f.predator?.6:5));
       const turn=f.yawVelocity*dt;f.yaw+=turn;
@@ -321,8 +373,8 @@ class AquariumMotion {
       f.pitchVelocity+=clamp(desiredPitch-f.pitchVelocity,-dt*4,dt*4);f.pitch+=f.pitchVelocity*dt;
       // Retain short bursts, but accelerate along the current body axis. Brake
       // while turning toward food above/below instead of sinking sideways.
-      const headingBrake=f.predator?.8+.2*Math.max(0,Math.cos(delta)):f.feeding?Math.max(0,f.axis.dot(s)/Math.max(.001,s.length())):1-.56*clamp(Math.abs(delta)/1.9,0,1);
-      const targetSpeed=f.desiredSpeed*headingBrake,acceleration=f.predator?.32:f.feeding||f.fear>.15?2.2:1.0,deceleration=f.predator?.48:f.feeding?3:1.3;
+      const headingBrake=f.predator?.8+.2*Math.max(0,Math.cos(delta)):f.feeding?Math.max(0,f.axis.dot(s)/Math.max(.001,s.length())):burst?Math.max(0,Math.cos(delta)):1-.56*clamp(Math.abs(delta)/1.9,0,1);
+      const targetSpeed=f.desiredSpeed*headingBrake,acceleration=f.predator?.32:burst&&!f.feeding?48:f.feeding||f.fear>.15?2.2:1.0,deceleration=f.predator?.48:burst&&!f.feeding?42:f.feeding?3:1.3;
       const previousSpeed=f.speed,drive=clamp((targetSpeed-f.speed)/Math.max(.2,acceleration),0,1);
       // Tail effort leads the speed ramp; heavy sharks take longer to build momentum.
       f.thrust=f.thrust??0;f.thrust+=(drive-f.thrust)*(1-Math.exp(-dt*(drive>f.thrust?5:2.5)));
@@ -380,15 +432,16 @@ class AquariumMotion {
       }maxDepth=Math.max(maxDepth,this.resolveReef(1));if(maxDepth<.002)break;
     }
   }
-  syncModel(f,dt,immediate=false){const model=f.model;
+  syncModel(f,dt,immediate=false){const model=f.model,burst=f.species?.locomotion==='burst-rest'&&!f.feeding;
     if(immediate||!f.renderVelocity){model.position.copy(f.g.position);model.quaternion.copy(f.g.quaternion);f.renderVelocity=f.velocity.clone();f.renderAcceleration=0;this.syncSharkPose(f,0);return;}
-    const desired=f.g.position.clone().sub(model.position).multiplyScalar(f.predator?3.5:10).add(f.velocity),maxSpeed=f.predator?f.cruise*2.1:Math.max(f.feedSpeed,f.cruise*3.2);
+    const desired=f.g.position.clone().sub(model.position).multiplyScalar(f.predator?3.5:10).add(f.velocity),maxSpeed=f.predator?f.cruise*2.1:burst?f.cruise*4.6:Math.max(f.feedSpeed,f.cruise*3.2);
     if(f.predator)this.avoidRenderedRocks(f,desired);
     if(desired.length()>maxSpeed)desired.setLength(maxSpeed);
-    const change=desired.sub(f.renderVelocity),limit=(f.predator?.48:5)*dt;if(change.length()>limit)change.setLength(limit);
+    const change=desired.sub(f.renderVelocity),limit=(f.predator?.48:burst?60:5)*dt;if(change.length()>limit)change.setLength(limit);
     const before=f.renderVelocity.length();f.renderVelocity.add(change);f.renderAcceleration=(f.renderVelocity.length()-before)/dt;model.position.addScaledVector(f.renderVelocity,dt);
     model.quaternion.slerp(f.g.quaternion,1-Math.exp(-dt*(f.predator?6:12)));
     if(f.g.userData.swim){const swim=f.g.userData.swim,boost=clamp(Math.max(f.acceleration||0,f.renderAcceleration)/Math.max(.3,f.predator?.48:2.2),0,1);swim.effort.value=Math.max(swim.effort.value,.35+f.renderVelocity.length()/Math.max(.3,f.cruise)*.38+boost*.65);}
+    const fold=f.g.userData.swim?.tailFold;if(fold){const target=burst&&f.activity==='dash'&&f.burstLaunched?clamp(f.renderVelocity.length()/(f.cruise*3.5),0,1):0;fold.value+=(target-fold.value)*(1-Math.exp(-dt*14));}
     this.syncSharkPose(f,dt);
   }
   syncSharkPose(f,dt){
@@ -406,7 +459,7 @@ class AquariumMotion {
       if(closest.gap>=2.5)break;
       f.model.position.addScaledVector(new T.Vector3(closest.x,closest.y,closest.z).normalize(),Math.min(.25,2.5-closest.gap));
     }
-    f.g.position.copy(f.model.position);
+    f.g.position.copy(f.model.position);this.resolveResidentContacts(true);
   }
   avoidRenderedRocks(f,desired){
     const constraints=[],rotation=f.model.quaternion.clone(),state=f.visualState;
@@ -447,13 +500,12 @@ class AquariumMotion {
     return proxy;
   }
   renderedBounds(f){return this.residentBounds(f,true);}
-  resolveResidentContacts(){
+  resolveResidentContacts(initial=false){
     const drifting=this.obstacles.filter(o=>o.kind==='jellyfish'&&o.displace);if(!drifting.length)return;const displaced=new Map(),visible=this.predators.filter(f=>f.id<this.count).map(f=>this.renderedBounds(f));
-    // Most contact is handled as an early pressure wake. A small additional
-    // clearance projection handles a fast fin sweep or two sharks meeting at
-    // once, so a per-step drift limit cannot leave the jelly inside a fin.
-    for(let pass=0;pass<4;pass++)for(const body of visible)for(const o of drifting){const c=this.obstacleContact(body,o),used=displaced.get(o.owner)||0;if(c.gap>=1.2)continue;
-      const gentle=Math.min(Math.max(0,.12-used),1.2-c.gap),clearance=Math.max(0,.08-c.gap)*2,shift=Math.min(.12,Math.max(gentle,clearance));if(shift<=.00001)continue;
+    // Begin the pressure wake before fin contact. All colliders of one jelly
+    // share one pressure budget; imminent fin contact still gets separation.
+    for(let pass=0;pass<(initial?64:4);pass++)for(const body of visible)for(const o of drifting){const c=this.obstacleContact(body,o),used=displaced.get(o.owner)||0,wake=initial?3.2:2.5;if(c.gap>=wake)continue;
+      const gentle=Math.min(initial?Infinity:Math.max(0,.12-used),wake-c.gap),clearance=Math.max(0,.08-c.gap)*2,shift=Math.min(.12,Math.max(gentle,clearance));if(shift<=.00001)continue;
       const normal=Math.hypot(c.x,c.y,c.z),nx=normal>.02?c.x/normal:-body.segments[0].axis.z,ny=normal>.02?c.y/normal:0,nz=normal>.02?c.z/normal:body.segments[0].axis.x;
       o.displace(-nx*shift,-nz*shift,-ny*shift);displaced.set(o.owner,used+shift);
     }

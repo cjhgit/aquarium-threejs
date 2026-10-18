@@ -27,11 +27,11 @@ const species=[
     description:'杏橙色的流线身体向尾柄自然收窄，圆形绸尾与低弧背鳍像一小片柔软的晚霞。',
     features:['流线杏橙身','圆绸扇尾','低弧背鳍'],temperament:'轻快地沿水流巡游，尾缘起伏柔和。'},
   {id:'tidal-swallow',name:'碧潮燕尾',subtitle:'流线 · 碧蓝 · 深叉燕尾',family:'潮汐鱼',kind:1,heritage:false,height:.51,depth:.24,size:.88,speed:1.05,
-    traits:{size:2,schooling:3,danger:1,activity:5,speed:5},
+    traits:{size:2,schooling:3,danger:1,activity:5,speed:4},
     palette:['#175370','#48afc5','#b4e6d8'],finColor:'#6dbecb',pattern:'tidal',tail:'swallow',
     dorsal:[[.58,0],[.12,.40],[-.40,.28],[-.9,0]],anal:[[.26,0],[-.23,.23],[-.74,.19],[-.89,0]],
     description:'碧蓝鱼身饰有后倾水纹。扫向后方的背鳍与深叉燕尾共同强调前进的方向，和圆身帆鳍鱼截然不同。',
-    features:['后倾碧纹','后掠背鳍','深叉燕尾'],temperament:'精力充沛，喜欢穿梭、探索和短促冲刺，是水族馆里游得最快的鱼种。'},
+    features:['后倾碧纹','后掠背鳍','深叉燕尾'],temperament:'精力充沛，喜欢在上层水域探索，顺着水流轻快穿梭，偶尔短促冲刺。'},
   {id:'starlight-tetra',name:'星河灯鱼',subtitle:'纤小 · 青绿 · 红色侧线',family:'星河鱼',kind:3,heritage:false,height:.31,depth:.17,size:.43,speed:.84,
     traits:{size:1,schooling:5,danger:1,activity:4,speed:4},
     palette:['#174c60','#39b0b6','#c1e5d4'],finColor:'#7bcac2',pattern:'neon',tail:'small-fork',
@@ -43,7 +43,13 @@ const species=[
     palette:['#697980','#a6b3b5','#faf9f1'],finColor:'#87999f',pattern:'shark',tail:'shark-sickle',
     dorsal:[[.12,0],[-.01,.18],[-.22,.38],[-.32,.20],[-.29,.06],[-.49,0]],anal:[[-.73,0],[-.86,.10],[-1.04,0]],
     description:'银灰背部与乳白腹部之间有清晰的分界。宽而扁的短吻沿上唇前伸，下颌自然闭合。头肩之后，修长的躯干逐渐收向细尾柄；后掠胸鳍、偏后的镰形背鳍和上长下短的尾鳍，构成礁鲨的流畅剪影。',
-    features:['银背白腹','宽吻闭合唇线','后掠镰形背鳍'],temperament:'喜欢独自巡游，与同类保持距离。危险程度最高，其他鱼会提前远离，靠近时明显加速避开；不争抢颗粒鱼饵，偶尔与小鱼短暂追逐玩耍。'}
+    features:['银背白腹','宽吻闭合唇线','后掠镰形背鳍'],temperament:'喜欢独自巡游，与同类保持距离。危险程度最高，其他鱼会提前远离，靠近时明显加速避开；不争抢颗粒鱼饵，偶尔与小鱼短暂追逐玩耍。'},
+  {id:'silver-dart',name:'电光银梭',subtitle:'梭形 · 银白鱼身 · 镰形叉尾',family:'疾流鱼',kind:5,heritage:false,locomotion:'burst-rest',height:.21,depth:.14,size:.62,speed:2.65,
+    traits:{size:2,schooling:1,danger:1,activity:3,speed:5},
+    palette:['#8e9ca4','#e6ebee','#ffffff'],finColor:'#c4cfd4',pattern:'silver-dart',tail:'racing-sickle',
+    dorsal:[[.22,0],[-.10,.20],[-.50,.12],[-.72,0]],anal:[[-.30,0],[-.54,.11],[-.79,0]],
+    description:'像一枚掠过水面的银白色飞梭。尖吻、前厚后细的修长身体与紧收尾柄连成一条流线；窄而后掠的胸鳍、镰形深叉尾和沿体侧延伸的金色亮线，让它静止时也带着向前的速度感。冲刺时尾鳍上下叶轻轻收拢，休息后恢复展开。',
+    features:['尖吻梭形身','淡金线银白侧腹','窄镰形深叉尾'],temperament:'馆内速度最快。选定远处一片水域后迅速冲刺，抵达前收速，在附近轻摆鱼鳍休息较长时间，再向另一处冲刺；每条鱼独立选择目的地与休息时间。'}
 ];
 const habitats={
   'amber-fantail':{zone:'bottom',min:-3.3,max:.3,environment:'沙地与低层水域',diet:'底部藻屑、沉落的食物',habit:'多数时间贴近沙地慢游，偶尔到中下层探索，很少接近水面。'},
@@ -52,8 +58,12 @@ const habitats={
   'coral-silktail':{zone:'reef',min:-2.6,max:.4,environment:'左侧礁洞与珊瑚边缘',diet:'礁面藻类与细小食物',habit:'偏爱礁石提供的遮蔽，会从拱洞中穿过，也会短暂游到外侧。'},
   'tidal-swallow':{zone:'surface',min:3.4,max:7.4,environment:'上层透光水域',diet:'浮游植物与细小浮游生物',habit:'大多在上层追随水流觅食，偶尔下降到中层，不贴着水面不动。'},
   'starlight-tetra':{zone:'grass',min:-1.4,max:2.3,environment:'海草边缘的中下层',diet:'微小浮游生物',habit:'喜欢沿海草边缘结群，受惊时一起散开，平静后回到熟悉的水域。'},
+  'silver-dart':{zone:'open',min:1.8,max:5.5,environment:'中上层开阔水域',diet:'细小浮游生物与颗粒饵',habit:'偶尔突然蹬尾，沿着选好的方向冲刺 1–2 秒；抵达后在原处附近静息 24–42 秒，恢复体力再出发，真正危险迫近时才快速逃离。'},
   'blue-reef-shark':{zone:'open',min:.5,max:3.5,environment:'礁外开阔的中层水域',diet:'本馆不捕食居民，也不争抢颗粒饵',habit:'独自绕行，偶尔选一条小鱼短暂追玩；靠近或数秒后就放慢离开，不伤害小鱼。'}
 };
 for(const item of species){item.habitat=Object.freeze(habitats[item.id]);Object.freeze(item.traits);Object.freeze(item.palette);Object.freeze(item.features);for(const key of ['dorsal','anal']){item[key].forEach(Object.freeze);Object.freeze(item[key]);}Object.freeze(item);}
 globalThis.AQUARIUM_SPECIES=Object.freeze(species);
+// Sparse accents among the slower residents: 1 / 2 / 2 / 2 / 3 at the five densities.
+const ordinary=[0,5,1,5,2,5,3,5,4,5];
+globalThis.AQUARIUM_FISH_PLAN=Object.freeze(Array.from({length:52},(_,i)=>[2,18,42].includes(i)?7:ordinary[i%ordinary.length]));
 })();

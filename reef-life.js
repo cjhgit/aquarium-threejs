@@ -97,7 +97,7 @@ function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[
   return {residents,update(t){const dt=Math.max(0,Math.min(.5,t-previous));previous=t;for(const r of residents){const {g,home,phase,species:s}=r,q=t+phase;
     if(s.id==='tide-crab')crab(r,t,dt);
     if(s.id==='sea-turtle')r.turtleController.update({dt,t});
-    if(s.id==='moon-jelly'){r.displacement.multiplyScalar(Math.exp(-dt*.22));jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
+    if(s.id==='moon-jelly'){const offset=r.displacement.length(),recovery=Math.min(offset*(1-Math.exp(-dt*.22)),dt*.35);if(offset>0)r.displacement.multiplyScalar(1-recovery/offset);jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
     animateModel(g,q);
   }}};
 }

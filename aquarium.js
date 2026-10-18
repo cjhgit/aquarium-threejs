@@ -74,6 +74,7 @@ const sharkCenter=x=>.035*T.MathUtils.smoothstep(x,.45,1.04);
 const bodyResolution=species=>species.predator?{rings:40,sides:20}:species.heritage?{rings:16,sides:12}:{rings:20,sides:14};
 function bodyRing(species,u){const rounded=species.heritage,x=rounded?-Math.cos(u*Math.PI):u*2-1;
   if(species.predator){const p=sharkProfile.getPoint(u);return {x:p.x,r:p.y,w:p.z};}
+  if(species.locomotion==='burst-rest')return {x,r:.008+Math.pow(Math.max(0,Math.sin(u*Math.PI)),.85)*(.32+.68*T.MathUtils.smoothstep(x,-.95,-.05))};
   const taper=.57+.43*T.MathUtils.smoothstep(x,-.92,.15);
   return {x,r:rounded?Math.max(.012,Math.sin(u*Math.PI)):Math.pow(Math.max(0,Math.sin(u*Math.PI)),.63)*taper+.018};
 }
@@ -96,6 +97,9 @@ function skin(species){
   if(species.pattern==='amber'){ctx.fillStyle='rgba(225,113,30,.24)';ctx.beginPath();ctx.ellipse(560,80,115,55,-.25,0,Math.PI*2);ctx.fill();}
   if(species.pattern==='coral'){for(const [x,y,r] of [[420,35,110],[580,145,65],[350,235,85]]){ctx.fillStyle='rgba(255,222,168,.24)';ctx.beginPath();ctx.ellipse(x,y,r,39,-.3,0,Math.PI*2);ctx.fill();}}
   if(species.pattern==='neon'){for(const y of [0,192]){ctx.fillStyle='#98ebe2';ctx.fillRect(30,y,680,9);}for(const y of [210,368]){ctx.fillStyle='#ce593c';ctx.fillRect(130,y,570,14);}}
+  if(species.pattern==='silver-dart'){
+    for(const y of [32,160,224,352]){const line=ctx.createLinearGradient(55,0,716,0);line.addColorStop(0,'rgba(43,136,183,.1)');line.addColorStop(.3,'#e5dfc4');line.addColorStop(1,'#f1eddf');ctx.fillStyle=line;ctx.beginPath();ctx.moveTo(30,y+4);ctx.lineTo(708,y-3);ctx.lineTo(708,y+3);ctx.lineTo(30,y+7);ctx.fill();}
+  }
   const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;texture.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());return texture;
 }
 // A shared spine carries every surface, including attached details. The head stays
@@ -104,6 +108,7 @@ const spineShader=`
 uniform float uBeat;
 uniform float uEffort;
 uniform float uBodyWave;
+uniform float uTailFold;
 uniform vec2 uBend;
 float fishSinc(float a){if(abs(a)<.05){float a2=a*a;return 1.-a2/6.+a2*a2/120.;}return sin(a)/a;}
 vec3 fishCenter(float x){
@@ -124,14 +129,14 @@ vec3 fishDeform(vec3 p){return fishCenter(p.x)+fishRotate(vec3(0.,p.yz),fishRota
 `;
 function attachSpine(shader,swim){
   shader.uniforms.uBeat=swim.phase;shader.uniforms.uEffort=swim.effort;
-  shader.uniforms.uBend=swim.bend;shader.uniforms.uBodyWave=swim.wave;
+  shader.uniforms.uBend=swim.bend;shader.uniforms.uBodyWave=swim.wave;shader.uniforms.uTailFold=swim.tailFold;
   shader.vertexShader=spineShader+shader.vertexShader;
   shader.vertexShader=shader.vertexShader.replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nobjectNormal=fishRotate(objectNormal,fishRotation(position.x));');
   // Run after the material's local fin flutter, before projection/world transforms.
   shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','transformed=fishDeform(transformed);\n#include <project_vertex>');
 }
 const bodyMats=speciesCatalog.map(species=>{
-  const mat=new T.MeshStandardMaterial({map:skin(species),roughness:species.predator?.48:.35,metalness:species.predator?.18:.05,flatShading:true,transparent:false,opacity:1,depthWrite:true,emissive:species.finColor,emissiveIntensity:species.predator?.01:species.heritage?.10:.06});
+  const mat=new T.MeshStandardMaterial({map:skin(species),roughness:species.predator?.48:species.locomotion==='burst-rest'?.28:.35,metalness:species.predator?.18:species.locomotion==='burst-rest'?.22:.05,flatShading:true,transparent:false,opacity:1,depthWrite:true,emissive:species.finColor,emissiveIntensity:species.predator?.01:species.heritage?.10:.06});
   mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uAura={value:new T.Color(species.finColor)};s.fragmentShader='uniform vec3 uAura;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
 float aura=pow(1.-abs(dot(normal,normalize(vViewPosition))),2.2);totalEmissiveRadiance+=uAura*aura*.18;
 `);};return mat;
@@ -158,7 +163,7 @@ float phase=uBeat;
 vFinUv=uv;
 float freeEdge=uv.y*uv.y;
 float flutter=sin(phase-position.x*3.-uv.y*2.4);
-if(aFin<.5){float tailRoot=mix(mix(-.96,-.82,uClassic),-1.29,uShark);transformed.z+=flutter*pow(max(0.,-position.x+tailRoot),1.2)*.24*uEffort;}
+if(aFin<.5){float tailRoot=mix(mix(-.96,-.82,uClassic),-1.29,uShark);transformed.z+=flutter*pow(max(0.,-position.x+tailRoot),1.2)*.24*uEffort;transformed.y*=1.-uTailFold*.3*smoothstep(1.02,1.65,-position.x);}
 else if(aFin<2.5){transformed.z+=flutter*freeEdge*mix(.09,.025,uShark)*uEffort;}
 else {float side=aFin<3.5?1.:-1.;transformed.z+=side*freeEdge*sin(phase*.65-uv.y*2.)*mix(.13,.035,uShark)*uEffort;transformed.y+=freeEdge*cos(phase*.65)*mix(.065,.018,uShark)*uEffort;}
 `);s.fragmentShader='uniform float uClassic; uniform float uShark; varying vec2 vFinUv;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
@@ -187,6 +192,10 @@ function finGeometry(species){const {height:h,depth}=profile(species),positions=
     const curve=new T.CatmullRomCurve3([[-1.28,.025,0],[-1.48,.16,0],[-1.91,.51,0],[-1.98,.55,0],[-1.90,.37,0],[-1.81,.33,0],[-1.85,.31,0],[-1.63,.06,0],[-1.57,-.025,0],[-1.85,-.30,0],[-1.65,-.25,0],[-1.38,-.055,0],[-1.28,-.025,0]].map(p=>new T.Vector3(...p)),false,'catmullrom',.08);
     patch(()=>[-1.29,0,0],t=>curve.getPoint(t).toArray(),0,32,7);
     attachedFin([[-.76,0],[-.87,.12],[-.98,.05],[-1.08,0]],1);
+  }else if(species.tail==='racing-sickle'){
+    const curve=new T.CatmullRomCurve3([[-.98,.04,0],[-1.36,.19,0],[-1.91,.53,0],[-1.76,.28,0],[-1.38,0,0],[-1.76,-.28,0],[-1.91,-.53,0],[-.98,-.04,0]].map(p=>new T.Vector3(...p)),false,'catmullrom',.05);
+    patch(()=>[-.98,0,0],t=>curve.getPoint(t).toArray(),0,32,6);
+    attachedFin([[-.76,0],[-.82,.065],[-.94,0]],1);
   }else if(species.tail==='classic-fork'||species.tail==='moon-fan'){
     const points=species.tail==='moon-fan'?[[-1.12,.13,0],[-1.69,.53,0],[-1.61,.23,0],[-1.5,0,0],[-1.61,-.23,0],[-1.69,-.53,0],[-1.12,-.13,0]]:[[-1.12,.15,0],[-1.8,.65,.025],[-1.66,.28,.01],[-1.55,0,0],[-1.66,-.28,.01],[-1.8,-.65,.025],[-1.12,-.15,0]];
     const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p)),false,'catmullrom',.12);patch(()=>[-.82,0,0],t=>curve.getPoint(t).toArray(),0,28,7);
@@ -200,6 +209,11 @@ function finGeometry(species){const {height:h,depth}=profile(species),positions=
       const probe=new T.Mesh(bodyGeometries[speciesCatalog.indexOf(species)],bodyMats[speciesCatalog.indexOf(species)]);probe.updateMatrixWorld(true);const ray=new T.Raycaster();
       const root=t=>{const x=.25-.41*t,y=-.065;ray.set(new T.Vector3(x,y,side*2),new T.Vector3(0,0,-side));const hit=ray.intersectObject(probe,false)[0];return [x,y,hit?hit.point.z-side*.012:side*depth*.75];};
       const edge=new T.CatmullRomCurve3([[.25,-.065,side*.18],[.02,-.09,side*.39],[-.43,-.14,side*.66],[-.53,-.145,side*.69],[-.38,-.10,side*.41],[-.16,-.065,side*.18]].map(p=>new T.Vector3(...p)),false,'catmullrom',.05);
+      patch(root,t=>edge.getPoint(t).toArray(),side>0?3:4,20,6);
+    }else if(species.locomotion==='burst-rest'){
+      const probe=new T.Mesh(bodyGeometries[speciesCatalog.indexOf(species)],bodyMats[speciesCatalog.indexOf(species)]),ray=new T.Raycaster();probe.updateMatrixWorld(true);
+      const root=t=>{const x=.33-.24*t,y=-.045;ray.set(new T.Vector3(x,y,side),new T.Vector3(0,0,-side));const hit=ray.intersectObject(probe,false)[0];return [x,y,hit?hit.point.z-side*.012:side*depth*.7];};
+      const edge=new T.CatmullRomCurve3([[.33,-.045,side*.10],[-.13,-.09,side*.34],[-.40,-.105,side*.38],[-.17,-.055,side*.19],[.09,-.045,side*.11]].map(p=>new T.Vector3(...p)),false,'catmullrom',.05);
       patch(root,t=>edge.getPoint(t).toArray(),side>0?3:4,20,6);
     }else if(species.heritage){const z=side*depth*.7,curve=new T.CatmullRomCurve3([[-.02,-.37,z+side*.43],[-.24,-.4,z+side*.56],[-.48,-.3,z+side*.54],[-.37,-.09,z+side*.28],[-.25,-.03,z+side*.1]].map(p=>new T.Vector3(...p)),false,'catmullrom',.12);patch(()=>[.25,-.08,z],t=>curve.getPoint(t).toArray(),side>0?3:4,20,7);}
     else patch(t=>[.34-.16*t,-.08-t*.08,side*depth*.86],t=>[.34-.16*t-.64*Math.sin(t*Math.PI),-.08-t*.08-.26*Math.sin(t*Math.PI),side*(depth*.86+.47*Math.pow(Math.sin(t*Math.PI),.8))],side>0?3:4,16,6);
@@ -220,7 +234,7 @@ function mergeDetails(group){group.updateMatrixWorld(true);const buckets=new Map
 const eyeDetails=speciesCatalog.map((species,index)=>{
   const probe=new T.Mesh(bodyGeometries[index],bodyMats[index]);probe.updateMatrixWorld(true);
   const ray=new T.Raycaster(),parts=[],attachment={samples:0,missing:0,maxGap:0};
-  const x=species.predator?.80:.62,y=species.predator?sharkCenter(x)+species.height*.14:species.height*.24,rx=species.predator?.033:species.heritage?.077:.063,ry=species.predator?.023:species.heritage?.082:.070;
+  const x=species.predator?.80:.62,y=species.predator?sharkCenter(x)+species.height*.14:species.height*.24,rx=species.predator?.033:species.locomotion==='burst-rest'?.043:species.heritage?.077:.063,ry=species.predator?.023:species.locomotion==='burst-rest'?.035:species.heritage?.082:.070;
   function patch(side,cx,cy,sx,sy,lift,material,rings=4,sides=24){const points=[],indices=[];
     for(let i=0;i<=rings;i++)for(let j=0;j<=sides;j++){
       const r=i/rings,angle=j/sides*Math.PI*2,px=cx+Math.cos(angle)*r*sx,py=cy+Math.sin(angle)*r*sy;
@@ -253,7 +267,7 @@ function addSharkMouth(g,species){
 }
 function createFishModel(species){const index=speciesCatalog.indexOf(species),h=species.height,depth=species.depth,rounded=species.heritage,g=new T.Group();g.userData.species=species.id;g.userData.finStyle=rounded?'classic':'flowing';
   // Per-fish uniforms keep stroke timing tied to its actual speed while textures/programs stay shared.
-  const swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()},wave:{value:species.predator?.065:.035}};g.userData.swim=swim;
+  const swim={phase:{value:0},effort:{value:.6},tailFold:{value:0},bend:{value:new T.Vector2()},wave:{value:species.predator?.065:species.locomotion==='burst-rest'?.022:.035}};g.userData.swim=swim;
   function swimmingMesh(geometry,base){const material=base.clone(),compile=base.onBeforeCompile;
     material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};material.customProgramCacheKey=()=>base.customProgramCacheKey();
     const mesh=new T.Mesh(geometry,material);mesh.userData.swimmingSurface=true;return mesh;
@@ -274,7 +288,7 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
 }
 // The orbiting camera is a live sphere obstacle: fish may swim all around it, but never into the lens.
 environment.obstacles.push({center:camera.position,radius:1.7});
-const motion=new AquariumMotion(fish,random,environment),populationPlan=[0,5,1,5,2,5,3,5,4,5];
+const motion=new AquariumMotion(fish,random,environment),populationPlan=window.AQUARIUM_FISH_PLAN;
 // The cruising turtle is a live obstacle: smaller fish glide around its shell just like the rocks.
 const turtleResident=reefLife.residents.find(r=>r.species.id==='sea-turtle');
 if(turtleResident)environment.obstacles.push({center:turtleResident.g.position,radius:1.35});
@@ -325,7 +339,7 @@ function resizeGuide(){if(!guideRenderer)return;const rect=previewHost.getBoundi
 function selectSpecies(index){selectedSpecies=index;guideYaw=0;guidePitch=0;const species=guideCatalog[index];if(species.id==='sea-turtle')guideYaw=-.4;guideModels.forEach((g,i)=>g.visible=i===index);
   $('#species-family').textContent=species.family;$('#species-name').textContent=species.name;$('#species-subtitle').textContent=species.subtitle;$('#species-description').textContent=species.description;$('#species-behavior').textContent='习性：'+species.habitat.habit;$('#species-habitat').textContent='偏爱环境：'+species.habitat.environment;$('#species-diet').textContent='食性：'+species.habitat.diet;
   $('#species-features').replaceChildren(...species.features.map(text=>{const tag=document.createElement('span');tag.textContent=text;return tag;}));
-  const attributes=[['size','大小',['微小','小型','中型','大型','巨型']],['schooling','聚集',['独处','较低','适中','较高','最高']],['danger','危险',['温和','较低','适中','较高','最高']],['activity','活跃',['安静','较低','适中','活跃','好动']],['speed','速度',['缓慢','较慢','适中','较快','迅捷']]];
+  const attributes=[['size','大小',['微小','小型','中型','大型','巨型']],['schooling','聚集',['独处','较低','适中','较高','最高']],['danger','危险',['温和','较低','适中','较高','最高']],['activity','活跃',['安静','较低','适中','活跃','好动']],['speed','速度',['缓慢','较慢','适中','较快','最快']]];
   $('#species-attributes').replaceChildren(...attributes.map(([key,label,levels])=>{
     const level=species.traits[key],row=document.createElement('div'),term=document.createElement('dt'),value=document.createElement('dd'),text=document.createElement('span'),meter=document.createElement('span');
     term.textContent=label;text.textContent=levels[level-1];meter.className='attribute-meter';meter.setAttribute('aria-hidden','true');
