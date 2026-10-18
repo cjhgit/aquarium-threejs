@@ -152,7 +152,7 @@ function bodyGeometry(species){const {height,depth}=profile(species),positions=[
 }
 const bodyGeometries=speciesCatalog.map(bodyGeometry);
 const sharkEyeMat=new T.MeshStandardMaterial({color:'#879084',roughness:.43});
-const eyeMat=new T.MeshStandardMaterial({color:'#d0bd83',roughness:.3,metalness:.18}),pupilMat=new T.MeshStandardMaterial({color:'#071e24',roughness:.2}),shineMat=new T.MeshBasicMaterial({color:'#dff6ee'});
+const eyeMat=new T.MeshStandardMaterial({color:'#d0bd83',roughness:.3,metalness:.18}),pupilMat=new T.MeshStandardMaterial({color:'#2b4d56',roughness:.35}),shineMat=new T.MeshBasicMaterial({color:'#dff6ee'});
 const gillMaterials=speciesCatalog.map(s=>new T.LineBasicMaterial({color:new T.Color(s.palette[0]).multiplyScalar(.8),transparent:true,opacity:.65}));
 const finMats=speciesCatalog.map(species=>{
   const mat=new T.MeshStandardMaterial({color:species.finColor,vertexColors:true,transparent:!species.predator,opacity:species.predator?1:species.heritage?.95:.92,side:T.DoubleSide,depthWrite:!!species.predator,roughness:.38,metalness:.04,emissive:species.finColor,emissiveIntensity:.17});mat.forceSinglePass=true;
@@ -223,7 +223,7 @@ function mergeDetails(group){group.updateMatrixWorld(true);const buckets=new Map
 const eyeDetails=speciesCatalog.map((species,index)=>{
   const probe=new T.Mesh(bodyGeometries[index],bodyMats[index]);probe.updateMatrixWorld(true);
   const ray=new T.Raycaster(),parts=[],attachment={samples:0,missing:0,maxGap:0};
-  const x=species.predator?.80:.62,y=species.predator?sharkCenter(x)+species.height*.14:species.height*.24,rx=species.predator?.041:species.heritage?.096:.079,ry=species.predator?.029:species.heritage?.103:.087;
+  const x=species.predator?.80:.62,y=species.predator?sharkCenter(x)+species.height*.14:species.height*.24,rx=species.predator?.033:species.heritage?.077:.063,ry=species.predator?.023:species.heritage?.082:.070;
   function patch(side,cx,cy,sx,sy,lift,material,rings=4,sides=24){const points=[],indices=[];
     for(let i=0;i<=rings;i++)for(let j=0;j<=sides;j++){
       const r=i/rings,angle=j/sides*Math.PI*2,px=cx+Math.cos(angle)*r*sx,py=cy+Math.sin(angle)*r*sy;
@@ -233,7 +233,7 @@ const eyeDetails=speciesCatalog.map((species,index)=>{
     }
     const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(points,3));geometry.setIndex(indices);geometry.computeVertexNormals();parts.push({geometry,material});
   }
-  for(const side of [-1,1]){patch(side,x,y,rx,ry,.0015,species.predator?sharkEyeMat:eyeMat);patch(side,x+.008,y-.002,rx*.64,ry*.69,.0045,pupilMat);patch(side,x+.015,y+ry*.29,rx*.16,ry*.15,.0075,shineMat,2,12);}
+  for(const side of [-1,1]){patch(side,x,y,rx,ry,.0012,species.predator?sharkEyeMat:eyeMat);patch(side,x+.007,y-.002,rx*.58,ry*.62,.0028,pupilMat);patch(side,x+.013,y+ry*.29,rx*.13,ry*.12,.0048,shineMat,2,12);}
   return {parts,attachment,probe};
 });
 const gillDetails=speciesCatalog.map((species,index)=>{
