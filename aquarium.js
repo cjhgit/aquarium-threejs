@@ -275,6 +275,8 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
   g.traverse(part=>{if(!part.geometry||part.userData.swimmingSurface)return;part.updateMatrix();const geometry=part.geometry.clone();geometry.applyMatrix4(part.matrix);part.geometry=geometry;part.position.set(0,0,0);part.rotation.set(0,0,0);part.scale.set(1,1,1);const base=part.material,compile=base.onBeforeCompile;part.material=base.clone();part.material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};part.material.customProgramCacheKey=()=>base.customProgramCacheKey()+'-spine';});
   return g;
 }
+// The orbiting camera is a live sphere obstacle: fish may swim all around it, but never into the lens.
+environment.obstacles.push({center:camera.position,radius:1.7});
 const motion=new AquariumMotion(fish,random,environment),populationPlan=[0,5,1,5,2,5,3,5,4,5];
 for(let i=0;i<54;i++){const species=speciesCatalog[i<2?6:populationPlan[(i-2)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
 function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.model.visible=i<n);}
