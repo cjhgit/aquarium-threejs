@@ -7,11 +7,36 @@ function seeded(seed){return ()=>{seed=(seed*1664525+1013904223)>>>0;return seed
 function fixture(count=12,seed=11042,sharks=false){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=[0,5,1,5,2,5,3,5,4,5];
   for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<2?6:plan[(sharks?i-2:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
 }
+function speciesFixture(species,count=1,seed=42){const fish=[],engine=new AquariumMotion(fish,seeded(seed));for(let i=0;i<count;i++)engine.register({g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1});engine.setCount(count);return {fish,engine};}
 function position(engine,f,x,y,z,yaw=0){f.g.position.set(x,y,z);f.yaw=yaw;f.pitch=0;f.roll=0;f.speed=f.cruise;f.velocity.set(Math.cos(yaw)*f.speed,0,-Math.sin(yaw)*f.speed);f.home.copy(f.g.position);f.goal.set(x+Math.cos(yaw)*8,y,z-Math.sin(yaw)*8);f.nextSense=0;f.nextGoal=100;f.activity='cruise';f.activityFactor=1;f.activityUntil=100;engine.orient(f);}
 function pellet(x,y,z){return {mesh:{position:new T.Vector3(x,y,z)},speed:.17,life:0};}
 function advance(engine,seconds,foods=[],sample=()=>{}){for(let i=0;i<Math.ceil(seconds*60);i++){engine.update(1/60,foods);sample(i);}}
 globalThis.runMotionTests=async function(report=()=>{}){const results=[];
   async function test(name,run){try{const detail=await run();results.push({name,pass:true,detail});}catch(error){results.push({name,pass:false,detail:error.message});}report(results[results.length-1]);await new Promise(r=>setTimeout(r,0));}
+  await test('图鉴五项属性完整，鲨鱼最危险、最独处，灯鱼最聚群',()=>{
+    for(const species of AQUARIUM_SPECIES)for(const key of ['size','schooling','danger','activity','speed'])assert(Number.isInteger(species.traits[key])&&species.traits[key]>=1&&species.traits[key]<=5,`${species.name} 缺少有效属性 ${key}`);
+    const shark=AQUARIUM_SPECIES.find(s=>s.predator),tetra=AQUARIUM_SPECIES.find(s=>s.kind===3),active=AQUARIUM_SPECIES.find(s=>s.id==='tidal-swallow'),quiet=AQUARIUM_SPECIES.find(s=>s.id==='moon-angelfish');
+    assert(shark.traits.schooling===1&&shark.traits.danger===5,'鲨鱼属性未设为最低聚集、最高危险');assert(tetra.traits.schooling===5&&tetra.size===Math.min(...AQUARIUM_SPECIES.map(s=>s.size)),'最小鱼未设为最高聚集');assert(active.traits.activity===5&&quiet.traits.activity===1,'鱼种活跃程度未区分');assert(active.speed===Math.max(...AQUARIUM_SPECIES.map(s=>s.speed)),'最活跃鱼种的实际速度不够快');
+  });
+  await test('高聚集灯鱼主动靠拢，并保持共同游动方向',()=>{
+    const cases=[];for(const schooling of [1,5]){const base=AQUARIUM_SPECIES.find(s=>s.kind===3),species={...base,traits:{...base.traits,schooling}},{engine,fish}=speciesFixture(species,12);
+      fish.forEach((f,i)=>position(engine,f,-6+i%4*4,1,Math.floor(i/4)*3-3));let distance=0,alignment=0,samples=0;
+      advance(engine,90,[],frame=>{if(frame<=1800||frame%60)return;distance+=fish.reduce((sum,f)=>sum+Math.min(...fish.filter(o=>o!==f).map(o=>f.g.position.distanceTo(o.g.position))),0)/fish.length;const direction=new T.Vector3();for(const f of fish)direction.add(f.axis);alignment+=direction.length()/fish.length;samples++;});
+      cases.push({schooling,nearest:distance/samples,alignment:alignment/samples});assert(engine.audit().minGap>-.015,'结群时身体相交');
+    }assert(cases[1].nearest<cases[0].nearest*.7,'高聚集没有缩短同类间距');assert(cases[1].alignment>.7&&cases[1].alignment>cases[0].alignment+.2,'结群鱼没有共同游动');return cases;
+  });
+  await test('安静鱼多数时间停留，活跃鱼更常穿梭和冲刺',()=>{
+    const cases=[];for(const id of ['moon-angelfish','tidal-swallow']){const species=AQUARIUM_SPECIES.find(s=>s.id===id),{engine,fish}=speciesFixture(species);let hover=0,dart=0,speed=0,samples=0;
+      advance(engine,180,[],frame=>{if(frame<=600)return;const f=fish[0];hover+=f.activity==='hover'?1:0;dart+=f.activity==='dart'?1:0;speed+=f.speed;samples++;});cases.push({id,hover:hover/samples,dart:dart/samples,speed:speed/samples});
+    }assert(cases[0].hover>.5,'安静鱼停留时间不足一半');assert(cases[1].hover<.15&&cases[1].dart>.1,'活跃鱼没有持续穿梭与短冲刺');assert(cases[1].speed>cases[0].speed*4,'活跃与安静鱼的实际游速没有区别');return cases;
+  });
+  await test('两条鲨鱼接近时主动分开，保持独自巡游空间',()=>{
+    const {engine,fish}=speciesFixture(AQUARIUM_SPECIES.find(s=>s.predator),2);position(engine,fish[0],0,2,-2.5);position(engine,fish[1],0,2,2.5);
+    engine.steerFish=f=>{f.steer.set(1,0,0);f.desiredSpeed=f.cruise;};const before=engine.audit().minGap;advance(engine,10);const after=engine.audit().minGap;assert(after>before+2,'鲨鱼没有主动拉开同类间距');return {before,after};
+  });
+  await test('普通鱼在鲨鱼碰撞范围之外就警觉并加速远离',()=>{
+    const cases=[];for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator)){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES.find(s=>s.predator));const f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(2);position(engine,fish[0],0,1,0);position(engine,f,0,1,7.5,Math.PI/2);const before=engine.audit().minGap;let fear=0,speed=0;advance(engine,6,[],()=>{fear=Math.max(fear,f.fear);speed=Math.max(speed,f.speed);});assert(before>4,'起始位置没有在碰撞范围之外');assert(fear>.18&&speed>f.cruise*1.4,`${species.name} 对鲨鱼不够警觉`);cases.push({id:species.id,fear,speed});}return cases;
+  });
   await test('转向时后半身滞后，左右弯曲对称，直游后平滑恢复',()=>{
     const bends=[];
     for(const sign of [-1,1]){const {engine,fish}=fixture(1,42,true),f=fish[0];position(engine,f,0,1,0);

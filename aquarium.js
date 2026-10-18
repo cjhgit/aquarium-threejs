@@ -326,6 +326,13 @@ function resizeGuide(){if(!guideRenderer)return;const rect=previewHost.getBoundi
 function selectSpecies(index){selectedSpecies=index;guideYaw=0;guidePitch=0;const species=speciesCatalog[index];guideModels.forEach((g,i)=>g.visible=i===index);
   $('#species-family').textContent=species.family;$('#species-name').textContent=species.name;$('#species-subtitle').textContent=species.subtitle;$('#species-description').textContent=species.description;$('#species-behavior').textContent=species.temperament;
   $('#species-features').replaceChildren(...species.features.map(text=>{const tag=document.createElement('span');tag.textContent=text;return tag;}));
+  const attributes=[['size','大小',['微小','小型','中型','大型','巨型']],['schooling','聚集',['独处','较低','适中','较高','最高']],['danger','危险',['温和','较低','适中','较高','最高']],['activity','活跃',['安静','较低','适中','活跃','好动']],['speed','速度',['缓慢','较慢','适中','较快','迅捷']]];
+  $('#species-attributes').replaceChildren(...attributes.map(([key,label,levels])=>{
+    const level=species.traits[key],row=document.createElement('div'),term=document.createElement('dt'),value=document.createElement('dd'),text=document.createElement('span'),meter=document.createElement('span');
+    term.textContent=label;text.textContent=levels[level-1];meter.className='attribute-meter';meter.setAttribute('aria-hidden','true');
+    for(let i=0;i<5;i++){const mark=document.createElement('i');if(i<level)mark.className='filled';meter.append(mark);}
+    value.append(text,meter);row.dataset.attribute=key;row.setAttribute('role','group');row.setAttribute('aria-label',`${label}：${levels[level-1]}，${level}/5`);row.append(term,value);return row;
+  }));
   speciesList.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-current',i===index));
 }
 function initGuide(){if(guideRenderer)return;

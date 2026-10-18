@@ -37,7 +37,7 @@ class AquariumMotion {
   constructor(fish,random){this.fish=fish;this.predators=[];this.random=random;this.count=0;this.elapsed=0;this.accumulator=0;this.stepSize=1/60;this.lastMaxCorrection=0;}
   static floorHeight(x,z){return -4.7+.13*Math.sin(x*.6+z*.25)+.17*Math.cos(z*.4)+.1*Math.sin(x*1.8+z*.7);}
   register(f){
-    f.predator=!!f.species?.predator;f.fear=0;f.id=this.fish.length;f.yaw=f.direction>0?0:Math.PI;f.pitch=0;f.roll=0;f.yawVelocity=0;f.pitchVelocity=0;f.turnSide=f.id%2?1:-1;f.bendYaw=0;f.bendPitch=0;f.bendYawVelocity=0;f.bendPitchVelocity=0;
+    f.traits=f.species?.traits||{schooling:3,danger:1,activity:3};f.predator=!!f.species?.predator;f.fear=0;f.id=this.fish.length;f.yaw=f.direction>0?0:Math.PI;f.pitch=0;f.roll=0;f.yawVelocity=0;f.pitchVelocity=0;f.turnSide=f.id%2?1:-1;f.bendYaw=0;f.bendPitch=0;f.bendYawVelocity=0;f.bendPitchVelocity=0;
     f.radius=f.size*(f.rounded?.98:.9);f.vertical=f.kind===2?2.15:1.25;f.back=-1.2*f.size;f.front=.23*f.size;if(f.predator){f.radius=.30*f.size;f.vertical=2.05;f.back=-1.68*f.size;f.front=.74*f.size;}
     f.lengthRadius=Math.max(-f.back,f.front);f.boundRadius=f.lengthRadius+f.radius*f.vertical;
     if(f.predator)f.segments=Array.from({length:4},()=>({g:f.g,id:f.id,velocity:null,axis:new T.Vector3(),offset:new T.Vector3(),radius:f.radius+f.size*.04,vertical:f.vertical,back:0,front:1}));
@@ -54,11 +54,11 @@ class AquariumMotion {
   }
   minY(f,x=f.g.position.x,z=f.g.position.z){const clearance=Math.max(f.floorClearance*Math.cos(Math.min(1.4,Math.abs(f.pitch))),f.nose*Math.max(0,-Math.sin(f.pitch))+.04);
     return AquariumMotion.floorHeight(x,z)+clearance;}
-  chooseActivity(f){if(f.predator){f.activity='cruise';f.activityFactor=.85+this.random()*.25;f.activityUntil=this.elapsed+6+this.random()*7;this.chooseGoal(f);return;}const r=this.random(),small=f.kind===3;
-    if(r<.13){f.activity='hover';f.activityFactor=.05+this.random()*.13;f.activityUntil=this.elapsed+1.1+this.random()*2.3;}
-    else if(r<.38){f.activity='glide';f.activityFactor=.28+this.random()*.28;f.activityUntil=this.elapsed+1.8+this.random()*3.7;}
-    else if(r>(small?.82:.9)){f.activity='dart';f.activityFactor=1.45+this.random()*.5;f.activityUntil=this.elapsed+.8+this.random()*1.5;}
-    else {f.activity='cruise';f.activityFactor=.72+this.random()*.5;f.activityUntil=this.elapsed+3.5+this.random()*6.5;}
+  chooseActivity(f){if(f.predator){f.activity='cruise';f.activityFactor=.85+this.random()*.25;f.activityUntil=this.elapsed+6+this.random()*7;this.chooseGoal(f);return;}const r=this.random(),activity=(f.traits.activity-1)/4,hover=.58-.56*activity,glide=hover+.30-.18*activity,dart=.40*activity*activity;
+    if(r<hover){f.activity='hover';f.activityFactor=.015+this.random()*.065;f.activityUntil=this.elapsed+1.5+(1-activity)*3+this.random()*3;}
+    else if(r<glide){f.activity='glide';f.activityFactor=.18+this.random()*.3;f.activityUntil=this.elapsed+1.5+this.random()*3.5;}
+    else if(r>1-dart){f.activity='dart';f.activityFactor=1.4+this.random()*.55;f.activityUntil=this.elapsed+.7+this.random()*1.3;}
+    else {f.activity='cruise';f.activityFactor=.7+activity*.2+this.random()*.4;f.activityUntil=this.elapsed+2.5+this.random()*5;}
     if(f.activity==='hover')f.goal.copy(f.g.position).addScaledVector(f.axis,.6);else this.chooseGoal(f);
   }
   chooseGoal(f){const r=this.random,p=f.g.position;
@@ -69,11 +69,11 @@ class AquariumMotion {
     }
     // Independent, slowly changing territories replace synchronized trips to the two tank ends.
     if(this.elapsed>f.homeUntil){f.home.set(-11+r()*22,-1.9+r()*6,-6+r()*11);f.homeUntil=this.elapsed+22+r()*32;}
-    const angle=f.yaw+(r()-.5)*2.8,reach=2.5+r()*5;
+    const angle=f.yaw+(r()-.5)*2.8,reach=1.8+f.traits.activity*.35+r()*(2+f.traits.activity*.7);
     f.goal.set(p.x+Math.cos(angle)*reach,p.y+(r()-.5)*3.8,p.z-Math.sin(angle)*reach);
     f.goal.lerp(f.home,.16+r()*.17);f.goal.x=clamp(f.goal.x,-12.5,12.5);f.goal.z=clamp(f.goal.z,-6.8,5.8);
     f.goal.y=clamp(f.goal.y,Math.max(-2.3,this.minY(f,f.goal.x,f.goal.z)+.25),5.2);
-    f.nextGoal=this.elapsed+6+r()*9;
+    f.nextGoal=this.elapsed+4+(6-f.traits.activity)+r()*6;
   }
   place(f,limit){if(f.predator){const a=Math.PI*.5+f.id*Math.PI;f.patrolAngle=a;f.g.position.set(Math.sin(a)*12,2+f.id*.6,-5+Math.cos(a)*2.8);f.yaw=Math.atan2(Math.sin(a)*2.8,Math.cos(a)*12);this.orient(f);f.velocity.copy(f.axis).multiplyScalar(f.speed);return;}for(let attempt=0;attempt<400;attempt++){
     f.g.position.set(-13+this.random()*26,-2+this.random()*6,-7+this.random()*13);
@@ -123,7 +123,7 @@ class AquariumMotion {
   pointClearance(f,q){if(f.segments)return Math.min(...f.segments.map(segment=>this.pointClearance(segment,q)));const p=f.g.position,dx=q.x-p.x-(f.offset?.x||0),dy=(q.y-p.y-(f.offset?.y||0))/f.vertical,dz=q.z-p.z-(f.offset?.z||0),ax=f.axis.x,ay=f.axis.y/f.vertical,az=f.axis.z,t=clamp((dx*ax+dy*ay+dz*az)/(ax*ax+ay*ay+az*az),f.back,f.front);return Math.hypot(dx-ax*t,dy-ay*t,dz-az*t)-f.radius;}
   foodScore(f,food){
     if(f.fear>.45||!this.canEat(f,food)||f.targetFood||this.elapsed<f.cooldownUntil||(food.failedBy&&food.failedBy[f.id]>this.elapsed))return Infinity;
-    for(const shark of this.predators){if(shark.id<this.count&&this.pointClearance(shark,food.mesh.position)<.3)return Infinity;}
+    for(const shark of this.predators){if(shark.id<this.count&&this.pointClearance(shark,food.mesh.position)<1.1)return Infinity;}
     // The open foreground sand remains visible beyond the usual midwater patrol depth.
     const p=f.g.position,q=food.mesh.position,dx=q.x-p.x,dy=q.y-p.y,dz=q.z-p.z,distance=Math.hypot(dx,dy,dz),sight=(f.kind===3?8.5:9.5)+clamp(q.z-6,0,6);
     if(distance>sight)return Infinity;const view=(dx*f.axis.x+dy*f.axis.y+dz*f.axis.z)/Math.max(.01,distance);
@@ -162,7 +162,7 @@ class AquariumMotion {
       if(this.elapsed-f.lastFoodProgress>3.5){if(!food.failedBy)food.failedBy={};food.failedBy[f.id]=this.elapsed+3;this.releaseFood(f,false);}
     }else{
       f.reverseTarget=0;if(f.activity!=='hover'&&(p.distanceToSquared(goal)<1||this.elapsed>f.nextGoal)){
-        if(!f.predator&&this.random()<.2){f.activity='hover';f.activityFactor=.08;f.activityUntil=this.elapsed+1+this.random()*2;goal.copy(p).addScaledVector(f.axis,.5);}else this.chooseGoal(f);
+        if(!f.predator&&this.random()<(.30-.05*f.traits.activity)){f.activity='hover';f.activityFactor=.08;f.activityUntil=this.elapsed+1+this.random()*2;goal.copy(p).addScaledVector(f.axis,.5);}else this.chooseGoal(f);
       }
       f.steer.copy(goal).sub(p);f.steer.y*=.5;
       // Low-frequency wandering and stroke/glide rhythms are independent for every fish.
@@ -179,24 +179,43 @@ class AquariumMotion {
     if(p.x>side)f.steer.x-=(p.x-side)*.8;if(p.x< -side)f.steer.x+=(-side-p.x)*.8;
     if(p.z< -7)f.steer.z+=(-7-p.z)*.7;if(p.z>front)f.steer.z-=(p.z-front)*.7;
   }
+  schoolFish(f){
+    if(f.feeding)return;
+    if(f.predator){
+      // Solitary sharks keep personal space around the entire curved body.
+      for(const other of this.predators){if(other===f||other.id>=this.count||f.g.position.distanceToSquared(other.g.position)>Math.pow(pairReach(f,other)+6,2))continue;
+        const c=measure(f,other,1,0),weight=clamp(1-c.gap/5,0,1);f.steer.x+=c.x*weight*2.4;f.steer.y+=c.y*weight*.4;f.steer.z+=c.z*weight*2.4;
+      }return;
+    }
+    const affinity=Math.pow((f.traits.schooling-1)/4,2);if(affinity===0||f.activity==='hover')return;
+    const p=f.g.position,range=4+f.traits.schooling;let x=0,y=0,z=0,vx=0,vy=0,vz=0,weight=0;
+    for(let i=0;i<this.count;i++){const other=this.fish[i];if(other===f||other.species!==f.species||other.feeding)continue;
+      const d2=p.distanceToSquared(other.g.position);if(d2>range*range)continue;const w=1/(1+d2*.06);weight+=w;x+=other.g.position.x*w;y+=other.g.position.y*w;z+=other.g.position.z*w;vx+=other.velocity.x*w;vy+=other.velocity.y*w;vz+=other.velocity.z*w;
+    }
+    if(!weight)return;
+    const dx=x/weight-p.x,dy=y/weight-p.y,dz=z/weight-p.z,distance=Math.hypot(dx,dy,dz),pull=clamp((distance-1.2)*.24,0,1.3),scale=pull/Math.max(.01,distance),blend=.65*affinity;
+    f.steer.multiplyScalar(1-blend);f.steer.x+=affinity*(dx*scale+vx/weight*.8);f.steer.y+=affinity*(dy*scale+vy/weight*.8);f.steer.z+=affinity*(dz*scale+vz/weight*.8);
+    if(f.traits.schooling>=4)f.desiredSpeed=Math.max(f.desiredSpeed,f.cruise*(.7+clamp(distance*.12,0,.65)));
+  }
   avoidPredators(f,dt){if(f.predator)return;
     let threat=0,escapeX=0,escapeY=0,escapeZ=0;
-    for(const shark of this.predators){if(shark.id>=this.count||f.g.position.distanceToSquared(shark.g.position)>Math.pow(shark.boundRadius+f.boundRadius+5,2))continue;
-      const c=measure(f,shark,.65,0),weight=clamp(1-c.gap/4,0,1);if(weight<=0)continue;
-      threat=Math.max(threat,weight);escapeX+=c.x*weight;escapeY+=c.y*weight*.35;escapeZ+=c.z*weight;
+    for(const shark of this.predators){if(shark.id>=this.count||f.g.position.distanceToSquared(shark.g.position)>Math.pow(shark.boundRadius+f.boundRadius+7,2))continue;
+      const danger=shark.traits.danger/5,range=2+danger*4.5,c=measure(f,shark,.9,0),weight=clamp(1-c.gap/range,0,1);if(weight<=0)continue;
+      threat=Math.max(threat,weight);escapeX+=c.x*weight*danger;escapeY+=c.y*weight*.35*danger;escapeZ+=c.z*weight*danger;
       // Sideways motion opens a passage instead of reversing straight into following fish.
       if(Math.abs(c.x*shark.axis.x+c.z*shark.axis.z)>.75){const side=f.id%2?1:-1;escapeX+=shark.axis.z*side*weight*.8;escapeZ-=shark.axis.x*side*weight*.8;}
     }
     f.fear+=(threat-f.fear)*(1-Math.exp(-dt*(threat>f.fear?4:1.3)));
     if(threat>.08){if(f.targetFood&&threat>.45)this.releaseFood(f,false);
-      f.steer.multiplyScalar(1-threat*.85);f.steer.x+=escapeX*3.5;f.steer.y+=escapeY*2;f.steer.z+=escapeZ*3.5;
+      f.steer.multiplyScalar(1-threat*.95);f.steer.x+=escapeX*5;f.steer.y+=escapeY*2.5;f.steer.z+=escapeZ*5;
     }
-    if(f.fear>.08){f.desiredSpeed=Math.max(f.desiredSpeed,f.cruise*(1.15+f.fear*1.25));f.mode='avoiding';}
+    if(f.fear>.08){f.desiredSpeed=Math.max(f.desiredSpeed,f.cruise*(1.25+f.fear*1.65));f.mode='avoiding';}
   }
   step(dt,foods){this.elapsed+=dt;this.prepareMeals(foods);
     for(let i=0;i<this.count;i++){const f=this.fish[i];f.previousMouth.copy(f.g.position).addScaledVector(f.axis,f.nose);}
     for(const food of foods)if(food.pursuer>=this.count){delete food.pursuer;delete food.reservedUntil;}
     for(let i=0;i<this.count;i++)this.steerFish(this.fish[i],foods);
+    for(let i=0;i<this.count;i++)this.schoolFish(this.fish[i]);
     for(let i=0;i<this.count;i++)this.avoidPredators(this.fish[i],dt);
     for(let i=0;i<this.count;i++)for(let j=i+1;j<this.count;j++){
       const a=this.fish[i],b=this.fish[j],d2=a.g.position.distanceToSquared(b.g.position);if(d2>Math.pow(pairReach(a,b)+4,2))continue;
@@ -206,11 +225,6 @@ class AquariumMotion {
         a.steer.x+=nx*force*aw;a.steer.y+=ny*force*.7*aw;a.steer.z+=nz*force*aw;b.steer.x-=nx*force*bw;b.steer.y-=ny*force*.7*bw;b.steer.z-=nz*force*bw;
         const dx=a.g.position.x-b.g.position.x,dz=a.g.position.z-b.g.position.z;
         if(Math.abs(dx)>Math.abs(dz)*2){const side=a.id<b.id?1:-1;a.steer.z+=side*force*.5*aw;b.steer.z-=side*force*.5*bw;}
-      }
-      // Small fish sometimes swim loosely together, then return to their own paths.
-      if(a.kind===3&&b.kind===3&&!a.feeding&&!b.feeding&&d2>3&&d2<16){
-        if(Math.sin(this.elapsed*.11+a.wanderPhase)>.6)a.steer.addScaledVector(b.velocity,.09);
-        if(Math.sin(this.elapsed*.11+b.wanderPhase)>.6)b.steer.addScaledVector(a.velocity,.09);
       }
     }
     for(let i=0;i<this.count;i++){
