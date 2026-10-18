@@ -16,7 +16,7 @@ const species=[
     palette:['#797d5c','#e1dfbd','#f8eed6'],finColor:'#e4d8ad',pattern:'moon',tail:'moon-fan',
     dorsal:[[.56,0],[.16,.42],[-.32,.91],[-.69,.47],[-.91,0]],anal:[[.3,0],[-.12,.66],[-.63,.49],[-.86,0]],
     description:'银杏白的高身与墨绿竖纹构成月光般的轮廓。上下长鳍互相呼应，两条细长腹须随水流垂落。',
-    features:['高身墨纹','上下长帆鳍','一对细长腹须'],temperament:'六种鱼中最从容的一种，轻摆长鳍慢慢滑行。'},
+    features:['高身墨纹','上下长帆鳍','一对细长腹须'],temperament:'小型鱼中最从容的一种，轻摆长鳍慢慢滑行。'},
   {id:'coral-silktail',name:'霞金绸尾',subtitle:'流线 · 杏橙 · 圆绸尾',family:'暖流鱼',kind:0,heritage:false,height:.46,depth:.26,size:.83,speed:.63,
     palette:['#a95036','#eea574','#fce0b2'],finColor:'#eab386',pattern:'coral',tail:'round-fan',
     dorsal:[[.58,0],[.22,.19],[-.19,.32],[-.63,.22],[-.91,0]],anal:[[.26,0],[-.21,.17],[-.68,.15],[-.88,0]],
@@ -31,7 +31,12 @@ const species=[
     palette:['#174c60','#39b0b6','#c1e5d4'],finColor:'#7bcac2',pattern:'neon',tail:'small-fork',
     dorsal:[[.4,0],[.04,.19],[-.57,.15],[-.82,0]],anal:[[.2,0],[-.26,.12],[-.68,.11],[-.83,0]],
     description:'纤小的青绿色鱼身上，一条浅蓝亮线与朱红侧线并行。短背鳍和轻巧叉尾让它像水中的一颗流星。',
-    features:['纤小流线身','蓝红双侧线','轻巧小叉尾'],temperament:'游动轻快，常和同伴在较近的水域穿梭。'}
+    features:['纤小流线身','蓝红双侧线','轻巧小叉尾'],temperament:'游动轻快，常和同伴在较近的水域穿梭。'},
+  {id:'blue-reef-shark',name:'蓝礁巡游鲨',subtitle:'巨型 · 银背白腹 · 宽吻闭颌',family:'礁湾鲨',kind:4,predator:true,heritage:false,height:.26,depth:.23,size:4.65,speed:.96,
+    palette:['#697980','#a6b3b5','#faf9f1'],finColor:'#87999f',pattern:'shark',tail:'shark-sickle',
+    dorsal:[[.12,0],[-.01,.18],[-.22,.38],[-.32,.20],[-.29,.06],[-.49,0]],anal:[[-.73,0],[-.86,.10],[-1.04,0]],
+    description:'银灰背部与乳白腹部之间有清晰的分界。宽而扁的短吻沿上唇前伸，下颌自然闭合。头肩之后，修长的躯干逐渐收向细尾柄；后掠胸鳍、偏后的镰形背鳍和上长下短的尾鳍，构成礁鲨的流畅剪影。',
+    features:['银背白腹','宽吻闭合唇线','后掠镰形背鳍'],temperament:'两条鲨鱼各自缓缓巡游，不追逐小鱼，也不争抢颗粒鱼饵。附近的小鱼会提前让路，距离很近时短暂加速避开。'}
 ];
 for(const item of species){Object.freeze(item.palette);Object.freeze(item.features);for(const key of ['dorsal','anal']){item[key].forEach(Object.freeze);Object.freeze(item[key]);}Object.freeze(item);}
 globalThis.AQUARIUM_SPECIES=Object.freeze(species);

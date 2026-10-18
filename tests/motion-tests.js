@@ -4,8 +4,8 @@
 const T=globalThis.THREE;
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 function seeded(seed){return ()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};}
-function fixture(count=12,seed=11042){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=[0,5,1,5,2,5,3,5,4,5];
-  for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[plan[i%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
+function fixture(count=12,seed=11042,sharks=false){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=[0,5,1,5,2,5,3,5,4,5];
+  for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<2?6:plan[(sharks?i-2:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
 }
 function position(engine,f,x,y,z,yaw=0){f.g.position.set(x,y,z);f.yaw=yaw;f.pitch=0;f.roll=0;f.speed=f.cruise;f.velocity.set(Math.cos(yaw)*f.speed,0,-Math.sin(yaw)*f.speed);f.home.copy(f.g.position);f.goal.set(x+Math.cos(yaw)*8,y,z-Math.sin(yaw)*8);f.nextSense=0;f.nextGoal=100;f.activity='cruise';f.activityFactor=1;f.activityUntil=100;engine.orient(f);}
 function pellet(x,y,z){return {mesh:{position:new T.Vector3(x,y,z)},speed:.17,life:0};}
@@ -44,7 +44,7 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     assert(food.eaten,`${name} 的鱼饵仍在可达范围之外`);const before=f.g.position.clone();engine.update(1/60,foods);assert(f.g.position.distanceTo(before)<.15,`${name} 吃完后发生边界瞬移`);cases.push({name,seconds:time});
   }return cases;});
   await test('六种鱼在前方、头顶、身下和过近位置都真正吃到鱼饵',()=>{let total=0,maxTime=0;
-    for(const species of AQUARIUM_SPECIES)for(const [dx,dy] of [[4,0],[4,1.7],[4,-1.7],[0,1.7],[0,-1.2],[.25,0],[-.6,.2]]){
+    for(const species of AQUARIUM_SPECIES.filter(s=>!s.predator))for(const [dx,dy] of [[4,0],[4,1.7],[4,-1.7],[0,1.7],[0,-1.2],[.25,0],[-.6,.2]]){
       const random=seeded(42),fish=[],engine=new AquariumMotion(fish,random),f={g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1};engine.register(f);engine.setCount(1);position(engine,f,0,1,0);const food=pellet(dx,1+dy,0),foods=[food];let time=0;
       while(foods.length&&time<6){engine.update(1/60,foods);if(foods.length)food.mesh.position.y=Math.max(AquariumMotion.floorHeight(dx,0)+.06,food.mesh.position.y-food.speed/60);time+=1/60;}
       assert(food.eaten&&foods.length===0,`${species.name} 没吃到相对位置 ${dx}, ${dy} 的鱼饵`);assert(food.mesh.visible===false,'吃食后鱼饵没有隐藏');maxTime=Math.max(maxTime,time);total++;
@@ -54,12 +54,20 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     while(foods.length&&time<12){engine.update(1/60,foods);for(const food of foods)food.mesh.position.y=Math.max(AquariumMotion.floorHeight(food.mesh.position.x,food.mesh.position.z)+.06,food.mesh.position.y-food.speed/60);maxDiners=Math.max(maxDiners,fish.filter(f=>f.feeding).length);time+=1/60;}
     assert(foods.length===0,`随机种子 ${seed} 仍有 ${foods.length} 颗鱼饵未吃到`);assert(original.every(food=>food.eaten&&food.mesh.visible===false),'鱼饵没有被真正吃掉');const diners=new Map();for(const food of original)diners.set(food.eatenBy,(diners.get(food.eatenBy)||0)+1);assert(diners.size>=2&&Math.max(...diners.values())<=2,'一条鱼包揽了三颗');assert(maxDiners<=1,'同一进食点出现互相阻挡的多个追食者');assert(engine.audit().minGap>-.015,'抢食时鱼体发生相交');cases.push({seed,seconds:time});
   }return cases;});
-  await test('52 尾混合鱼长时间变速追食，保持直立且不相交',async()=>{let minUp=1,minGap=Infinity,bites=0;for(const seed of [11042,512,2026]){const {engine,fish}=fixture(52,seed);let foods=[];
+  await test('小鱼提前转向避开鲨鱼，近距离加速，远处不惊扰',()=>{
+    const {engine,fish}=fixture(3,11042,true),[a,b,f]=fish;position(engine,a,0,1,0);position(engine,b,30,1,0);position(engine,f,3.9,1,0,Math.PI);
+    const before=f.g.position.distanceTo(a.g.position),cruise=f.cruise;let maxFear=0,maxSpeed=0;advance(engine,4,[],()=>{maxFear=Math.max(maxFear,f.fear);maxSpeed=Math.max(maxSpeed,f.speed);});
+    assert(maxFear>.3,'靠近鲨鱼没有产生避让');assert(maxSpeed>cruise*1.4,'小鱼没有加速拉开距离');assert(f.g.position.distanceTo(a.g.position)>before,'避让后与鲨鱼的距离没有增大');assert(engine.audit().minGap>-.015,'避让期间穿模');
+    const distant=fixture(3,11042,true);position(distant.engine,distant.fish[0],30,1,0);position(distant.engine,distant.fish[1],-30,1,0);position(distant.engine,distant.fish[2],0,1,0);advance(distant.engine,1);assert(distant.fish[2].fear===0,'远处鲨鱼使小鱼无故惊慌');return {maxFear,maxSpeed,before,after:f.g.position.distanceTo(a.g.position)};
+  });
+  await test('鲨鱼持续巡游，不停悬，不抢鱼饵',()=>{const {engine,fish}=fixture(2,42,true),foods=[pellet(0,1,0)];position(engine,fish[0],-4,1,0);position(engine,fish[1],4,1,0,Math.PI);let minSpeed=Infinity;advance(engine,40,foods,()=>{for(const f of fish){minSpeed=Math.min(minSpeed,f.speed);assert(!f.targetFood&&!f.feeding,'鲨鱼追逐颗粒鱼饵');assert(f.activity!=='hover','鲨鱼原地停悬');}});assert(foods.length===1&&!foods[0].eaten,'鲨鱼抢走了小鱼的食物');assert(minSpeed>.4,'鲨鱼巡游速度过低');return {minSpeed};});
+  await test('有鲨鱼时，前景沙地的三颗鱼饵仍由多条小鱼接力吃完',()=>{const cases=[];for(const seed of [42,11042,2026]){const {engine}=fixture(34,seed,true);advance(engine,2);const x=-4,z=14,y=AquariumMotion.floorHeight(x,z)+.06,foods=Array.from({length:3},(_,i)=>pellet(x+i*.14,y,z)),original=[...foods];let time=0;while(foods.length&&time<24){engine.update(1/60,foods);time+=1/60;}assert(foods.length===0,`种子 ${seed} 前景还有 ${foods.length} 颗没有被吃掉`);assert(new Set(original.map(food=>food.eatenBy)).size>=2,'前景三颗被同一条鱼吃完');cases.push({seed,seconds:time});}return cases;});
+  await test('两条鲨鱼与 52 尾小鱼长时间共游，保持直立且不相交',async()=>{let minUp=1,minGap=Infinity,bites=0;for(const seed of [11042,512,2026]){const {engine,fish}=fixture(54,seed,true);let foods=[];
     for(let frame=0;frame<10800;frame++){
       if(frame%1800===0){const f=fish[(frame/1800*7)%fish.length],p=f.g.position.clone().addScaledVector(f.axis,3);foods.push(...Array.from({length:3},(_,i)=>pellet(p.x+i*.13,p.y+.7,p.z)));}
       const dt=frame%7===0?1/30:1/60;engine.update(dt,foods);
       foods=foods.filter(food=>{food.life+=dt;food.mesh.position.y=Math.max(AquariumMotion.floorHeight(food.mesh.position.x,food.mesh.position.z)+.06,food.mesh.position.y-food.speed*dt);return !food.eaten&&food.life<24;});
-      if(frame%60===0){const a=engine.audit();minUp=Math.min(minUp,a.minUp);minGap=Math.min(minGap,a.minGap);assert(a.minUp>.90,'追食时出现翻肚');assert(a.minGap>-.015,'变速追食出现碰撞包络相交');assert(fish.every(f=>Number.isFinite(f.g.position.x)&&Number.isFinite(f.speed)),'出现无效运动数值');}
+      if(frame%60===0){const a=engine.audit();minUp=Math.min(minUp,a.minUp);minGap=Math.min(minGap,a.minGap);assert(a.minUp>.90,'追食时出现翻肚');assert(a.minGap>-.015,`种子 ${seed} 第 ${frame} 帧碰撞包络相交：${a.minGap}`);assert(fish.every(f=>Number.isFinite(f.g.position.x)&&Number.isFinite(f.speed)),'出现无效运动数值');}
       if(frame%600===0)await new Promise(r=>setTimeout(r,0));
     }bites+=fish.reduce((sum,f)=>sum+(f.bites||0),0);
   }assert(bites>15,'集中投喂后实际吃到的食物太少');return {simulatedSeconds:617,minUp,minGap,bites};});

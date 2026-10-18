@@ -68,22 +68,33 @@ float h=max(0.,position.y+4.55);transformed.x+=sin(uTime*.6+position.x*.4+positi
 // One immutable record per fish species drives the tank, thumbnails and live field guide.
 const speciesCatalog=window.AQUARIUM_SPECIES;
 function profile(species){return {height:species.height,depth:species.depth};}
+// Reef-shark proportions: https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/blacktip-reef-shark/
+// Joined cubic sections separate the slender shoulders, flat rostrum and narrow caudal peduncle.
+const sharkProfile=new T.CurvePath();
+for(const controls of [
+  [[-1.32,0,0],[-1.16,.11,.10],[-.65,.65,.55],[-.16,.97,.88]],
+  [[-.16,.97,.88],[.08,1.12,1.04],[.32,.89,.94],[.56,.72,.90]],
+  [[.56,.72,.90],[.78,.54,1.02],[1.04,.15,.83],[1.04,0,0]]
+])sharkProfile.add(new T.CubicBezierCurve3(...controls.map(p=>new T.Vector3(...p))));
+const sharkCenter=x=>.035*T.MathUtils.smoothstep(x,.45,1.04);
+const bodyResolution=species=>species.predator?{rings:40,sides:20}:species.heritage?{rings:16,sides:12}:{rings:20,sides:14};
 function bodyRing(species,u){const rounded=species.heritage,x=rounded?-Math.cos(u*Math.PI):u*2-1;
+  if(species.predator){const p=sharkProfile.getPoint(u);return {x:p.x,r:p.y,w:p.z};}
   const taper=.57+.43*T.MathUtils.smoothstep(x,-.92,.15);
   return {x,r:rounded?Math.max(.012,Math.sin(u*Math.PI)):Math.pow(Math.max(0,Math.sin(u*Math.PI)),.63)*taper+.018};
 }
 function bodyRim(species,x,bottom=false){
-  const rings=species.heritage?16:20,sides=species.heritage?12:14;
-  const polygonTop=sides%4===0?1:Math.cos(Math.PI/sides);
-  let previous=bodyRing(species,0);
-  for(let i=1;i<=rings;i++){const next=bodyRing(species,i/rings);if(x<=next.x){const t=T.MathUtils.clamp((x-previous.x)/(next.x-previous.x),0,1);return T.MathUtils.lerp(previous.r,next.r,t)*species.height*polygonTop*(bottom&&!species.heritage?.93:1);}previous=next;}
-  return previous.r*species.height*polygonTop;
+  const {rings,sides}=bodyResolution(species),polygonTop=species.predator?Math.cos(Math.PI/sides):sides%4===0?1:Math.cos(Math.PI/sides);
+  let previous=bodyRing(species,0),radius=previous.r;
+  for(let i=1;i<=rings;i++){const next=bodyRing(species,i/rings);if(x<=next.x){const t=T.MathUtils.clamp((x-previous.x)/(next.x-previous.x),0,1);radius=T.MathUtils.lerp(previous.r,next.r,t);break;}previous=next;radius=next.r;}
+  if(species.predator)return radius*species.height*(polygonTop+(bottom?-1:1)*.1*polygonTop*polygonTop)+(bottom?-1:1)*sharkCenter(x);
+  return radius*species.height*polygonTop*(bottom&&!species.heritage?.93:1);
 }
 function skin(species){
   const canvas=document.createElement('canvas');canvas.width=768;canvas.height=384;
   const ctx=canvas.getContext('2d'),[back,flank,belly]=species.palette.map(c=>new T.Color(c));
-  for(let y=0;y<384;y++){const dorsal=(Math.sin(y/384*Math.PI*2)+1)*.5,c=dorsal>.5?flank.clone().lerp(back,(dorsal-.5)*1.5):flank.clone().lerp(belly,(.5-dorsal)*1.6);ctx.fillStyle='#'+c.getHexString();ctx.fillRect(0,y,768,1);}
-  for(let row=0;row<30;row++)for(let col=0;col<48;col++){const x=col*17+(row%2)*8.5,y=row*13;ctx.strokeStyle='rgba(15,58,61,.17)';ctx.lineWidth=.8;ctx.beginPath();ctx.arc(x,y,7.8,-.35,Math.PI+.35);ctx.stroke();ctx.strokeStyle='rgba(255,244,203,.24)';ctx.beginPath();ctx.arc(x,y+1.5,6.8,.1,Math.PI-.1);ctx.stroke();}
+  for(let y=0;y<384;y++){if(species.predator){const side=Math.sin(y/384*Math.PI*2),white=T.MathUtils.smoothstep(side,-.05,.42),c=back.clone().lerp(flank,.35+.30*(1-Math.abs(side)));c.lerp(belly,white);ctx.fillStyle='#'+c.getHexString();ctx.fillRect(0,y,768,1);continue;}const dorsal=(Math.sin(y/384*Math.PI*2)*(species.predator?-1:1)+1)*.5,c=dorsal>.5?flank.clone().lerp(back,(dorsal-.5)*1.5):flank.clone().lerp(belly,(.5-dorsal)*1.6);ctx.fillStyle='#'+c.getHexString();ctx.fillRect(0,y,768,1);}
+  if(!species.predator)for(let row=0;row<30;row++)for(let col=0;col<48;col++){const x=col*17+(row%2)*8.5,y=row*13;ctx.strokeStyle='rgba(15,58,61,.17)';ctx.lineWidth=.8;ctx.beginPath();ctx.arc(x,y,7.8,-.35,Math.PI+.35);ctx.stroke();ctx.strokeStyle='rgba(255,244,203,.24)';ctx.beginPath();ctx.arc(x,y+1.5,6.8,.1,Math.PI-.1);ctx.stroke();}
   if(species.pattern==='celadon'||species.pattern==='moon'||species.pattern==='tidal'){
     const moon=species.pattern==='moon',tidal=species.pattern==='tidal';
     for(let i=0;i<(moon?4:3);i++){const x=(moon?120:145)+i*(moon?166:211);ctx.fillStyle=moon?'rgba(26,44,43,.7)':tidal?'rgba(8,67,95,.56)':'rgba(25,88,104,.42)';ctx.beginPath();ctx.moveTo(x,0);ctx.bezierCurveTo(x-28,120,x+(tidal?128:35),260,x+(tidal?100:-10),384);ctx.lineTo(x+(tidal?130:23),384);ctx.bezierCurveTo(x+(tidal?150:65),240,x+8,120,x+30,0);ctx.fill();}
@@ -99,36 +110,39 @@ float rear=pow(clamp(-position.x,0.,1.),1.65);
 transformed.z+=sin(phase+position.x*2.5)*rear*.055*uEffort;
 `;
 const bodyMats=speciesCatalog.map(species=>{
-  const mat=new T.MeshStandardMaterial({map:skin(species),roughness:.35,metalness:.05,flatShading:true,transparent:false,opacity:1,depthWrite:true,emissive:species.finColor,emissiveIntensity:species.heritage?.10:.06});
+  const mat=new T.MeshStandardMaterial({map:skin(species),roughness:species.predator?.48:.35,metalness:species.predator?.18:.05,flatShading:true,transparent:false,opacity:1,depthWrite:true,emissive:species.finColor,emissiveIntensity:species.predator?.01:species.heritage?.10:.06});
   mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uBeat={value:0};s.uniforms.uEffort={value:.6};s.uniforms.uAura={value:new T.Color(species.finColor)};s.vertexShader='uniform float uTime; uniform float uBeat; uniform float uEffort;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n'+swimShader);s.fragmentShader='uniform vec3 uAura;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
 float aura=pow(1.-abs(dot(normal,normalize(vViewPosition))),2.2);totalEmissiveRadiance+=uAura*aura*.18;
 `);};return mat;
 });
-function bodyGeometry(species){const {height,depth}=profile(species),positions=[],uvs=[],indices=[],rings=species.heritage?16:20,sides=species.heritage?12:14;
-  for(let i=0;i<=rings;i++){const {x,r}=bodyRing(species,i/rings);
-    for(let j=0;j<=sides;j++){const v=j/sides,theta=v*Math.PI*2,belly=!species.heritage&&Math.sin(theta)<0?.93:1;
-      positions.push(x,height*r*Math.sin(theta)*belly,depth*r*Math.cos(theta));uvs.push((x+1)*.5,v);
+function bodyGeometry(species){const {height,depth}=profile(species),positions=[],uvs=[],indices=[],{rings,sides}=bodyResolution(species);
+  for(let i=0;i<=rings;i++){const {x,r,w=r}=bodyRing(species,i/rings);
+    for(let j=0;j<=sides;j++){const theta=(j/sides+(species.predator?.5/sides:0))*Math.PI*2,v=theta/(Math.PI*2),belly=!species.heritage&&!species.predator&&Math.sin(theta)<0?.93:1;
+      const sy=Math.sin(theta),y=species.predator?sharkCenter(x)+height*r*(sy+.10*sy*sy):height*r*sy*belly;
+      positions.push(x,y,depth*w*Math.cos(theta));uvs.push((x+1)*.5,v);
       if(i<rings&&j<sides){const a=i*(sides+1)+j,b=a+sides+1;indices.push(a,b,a+1,b,b+1,a+1);}
     }
   }
-  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geo.setIndex(indices);geo.computeVertexNormals();return geo;
+  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geo.setIndex(indices);geo.computeVertexNormals();
+  return geo;
 }
 const bodyGeometries=speciesCatalog.map(bodyGeometry);
-const eyeGeo=new T.SphereGeometry(1,14,10),eyeMat=new T.MeshStandardMaterial({color:'#d0bd83',roughness:.3,metalness:.18,transparent:true}),pupilMat=new T.MeshStandardMaterial({color:'#071e24',roughness:.2,transparent:true}),shineMat=new T.MeshBasicMaterial({color:'#dff6ee',transparent:true});
+const sharkEyeMat=new T.MeshStandardMaterial({color:'#879084',roughness:.43});
+const eyeMat=new T.MeshStandardMaterial({color:'#d0bd83',roughness:.3,metalness:.18}),pupilMat=new T.MeshStandardMaterial({color:'#071e24',roughness:.2}),shineMat=new T.MeshBasicMaterial({color:'#dff6ee'});
 const gillMaterials=speciesCatalog.map(s=>new T.LineBasicMaterial({color:new T.Color(s.palette[0]).multiplyScalar(.8),transparent:true,opacity:.65}));
 const finMats=speciesCatalog.map(species=>{
-  const mat=new T.MeshStandardMaterial({color:species.finColor,vertexColors:true,transparent:true,opacity:species.heritage?.95:.92,side:T.DoubleSide,depthWrite:false,roughness:.38,metalness:.04,emissive:species.finColor,emissiveIntensity:.17});mat.forceSinglePass=true;
-  mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uBeat={value:0};s.uniforms.uEffort={value:.6};s.uniforms.uClassic={value:species.heritage?1:0};s.vertexShader='uniform float uTime; uniform float uClassic; uniform float uBeat; uniform float uEffort; attribute float aFin; varying vec2 vFinUv;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+  const mat=new T.MeshStandardMaterial({color:species.finColor,vertexColors:true,transparent:!species.predator,opacity:species.predator?1:species.heritage?.95:.92,side:T.DoubleSide,depthWrite:!!species.predator,roughness:.38,metalness:.04,emissive:species.finColor,emissiveIntensity:.17});mat.forceSinglePass=true;
+  mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.uniforms.uBeat={value:0};s.uniforms.uEffort={value:.6};s.uniforms.uClassic={value:species.heritage?1:0};s.uniforms.uShark={value:species.predator?1:0};s.vertexShader='uniform float uTime; uniform float uClassic; uniform float uShark; uniform float uBeat; uniform float uEffort; attribute float aFin; varying vec2 vFinUv;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
 ${swimShader}
 vFinUv=uv;
 float freeEdge=uv.y*uv.y;
 float flutter=sin(phase-position.x*3.-uv.y*2.4);
-if(aFin<.5){transformed.z+=flutter*pow(max(0.,-position.x+mix(-.96,-.82,uClassic)),1.2)*.24*uEffort;}
-else if(aFin<2.5){transformed.z+=flutter*freeEdge*.09*uEffort;}
-else {float side=aFin<3.5?1.:-1.;transformed.z+=side*freeEdge*sin(phase*.65-uv.y*2.)*.13*uEffort;transformed.y+=freeEdge*cos(phase*.65)*.065*uEffort;}
-`);s.fragmentShader='uniform float uClassic; varying vec2 vFinUv;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+if(aFin<.5){float tailRoot=mix(mix(-.96,-.82,uClassic),-1.29,uShark);transformed.z+=flutter*pow(max(0.,-position.x+tailRoot),1.2)*.24*uEffort;}
+else if(aFin<2.5){transformed.z+=flutter*freeEdge*mix(.09,.025,uShark)*uEffort;}
+else {float side=aFin<3.5?1.:-1.;transformed.z+=side*freeEdge*sin(phase*.65-uv.y*2.)*mix(.13,.035,uShark)*uEffort;transformed.y+=freeEdge*cos(phase*.65)*mix(.065,.018,uShark)*uEffort;}
+`);s.fragmentShader='uniform float uClassic; uniform float uShark; varying vec2 vFinUv;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
 float ribs=pow(.5+.5*cos(vFinUv.x*18.*6.2831853),14.);float edge=1.-smoothstep(.7,1.,vFinUv.y);
-diffuseColor.rgb*=.86+ribs*.26;diffuseColor.a*=mix(mix(.80,.84,uClassic),1.,edge)*(.94+ribs*.06);
+diffuseColor.rgb*=mix(.86+ribs*.26,.97+ribs*.03,uShark);diffuseColor.a*=mix(mix(.80,.84,uClassic),1.,edge)*(.94+ribs*.06);
 `);};return mat;
 });
 function finGeometry(species){const {height:h,depth}=profile(species),positions=[],uvs=[],types=[],colors=[],indices=[];
@@ -147,7 +161,12 @@ function finGeometry(species){const {height:h,depth}=profile(species),positions=
     patch(root,t=>{const p=curve.getPoint(t),a=root(t);return [p.x,a[1]+sign*Math.max(0,p.y),0];},type,28,8);
   }
   attachedFin(species.dorsal,1);attachedFin(species.anal,2);
-  if(species.tail==='classic-fork'||species.tail==='moon-fan'){
+  if(species.predator){
+    // Compact caudal fin, with a curved upper leading edge and a distinct fork notch.
+    const curve=new T.CatmullRomCurve3([[-1.28,.025,0],[-1.48,.16,0],[-1.91,.51,0],[-1.98,.55,0],[-1.90,.37,0],[-1.81,.33,0],[-1.85,.31,0],[-1.63,.06,0],[-1.57,-.025,0],[-1.85,-.30,0],[-1.65,-.25,0],[-1.38,-.055,0],[-1.28,-.025,0]].map(p=>new T.Vector3(...p)),false,'catmullrom',.08);
+    patch(()=>[-1.29,0,0],t=>curve.getPoint(t).toArray(),0,32,7);
+    attachedFin([[-.76,0],[-.87,.12],[-.98,.05],[-1.08,0]],1);
+  }else if(species.tail==='classic-fork'||species.tail==='moon-fan'){
     const points=species.tail==='moon-fan'?[[-1.12,.13,0],[-1.69,.53,0],[-1.61,.23,0],[-1.5,0,0],[-1.61,-.23,0],[-1.69,-.53,0],[-1.12,-.13,0]]:[[-1.12,.15,0],[-1.8,.65,.025],[-1.66,.28,.01],[-1.55,0,0],[-1.66,-.28,.01],[-1.8,-.65,.025],[-1.12,-.15,0]];
     const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p)),false,'catmullrom',.12);patch(()=>[-.82,0,0],t=>curve.getPoint(t).toArray(),0,28,7);
   }else if(species.tail==='round-fan'){
@@ -156,7 +175,12 @@ function finGeometry(species){const {height:h,depth}=profile(species),positions=
     patch(t=>[-.96,.1*Math.cos(t*Math.PI),0],t=>{const q=t*2-1;return [-1.4-(species.tail==='swallow'?.64:.4)*Math.pow(Math.abs(q),.72),q*(species.tail==='swallow'?.62:.38),.02*Math.sin(t*Math.PI*2)];},0,24,7);
   }
   for(const side of [-1,1]){
-    if(species.heritage){const z=side*depth*.7,curve=new T.CatmullRomCurve3([[-.02,-.37,z+side*.43],[-.24,-.4,z+side*.56],[-.48,-.3,z+side*.54],[-.37,-.09,z+side*.28],[-.25,-.03,z+side*.1]].map(p=>new T.Vector3(...p)),false,'catmullrom',.12);patch(()=>[.25,-.08,z],t=>curve.getPoint(t).toArray(),side>0?3:4,20,7);}
+    if(species.predator){
+      const probe=new T.Mesh(bodyGeometries[speciesCatalog.indexOf(species)],bodyMats[speciesCatalog.indexOf(species)]);probe.updateMatrixWorld(true);const ray=new T.Raycaster();
+      const root=t=>{const x=.25-.41*t,y=-.065;ray.set(new T.Vector3(x,y,side*2),new T.Vector3(0,0,-side));const hit=ray.intersectObject(probe,false)[0];return [x,y,hit?hit.point.z-side*.012:side*depth*.75];};
+      const edge=new T.CatmullRomCurve3([[.25,-.065,side*.18],[.02,-.09,side*.39],[-.43,-.14,side*.66],[-.53,-.145,side*.69],[-.38,-.10,side*.41],[-.16,-.065,side*.18]].map(p=>new T.Vector3(...p)),false,'catmullrom',.05);
+      patch(root,t=>edge.getPoint(t).toArray(),side>0?3:4,20,6);
+    }else if(species.heritage){const z=side*depth*.7,curve=new T.CatmullRomCurve3([[-.02,-.37,z+side*.43],[-.24,-.4,z+side*.56],[-.48,-.3,z+side*.54],[-.37,-.09,z+side*.28],[-.25,-.03,z+side*.1]].map(p=>new T.Vector3(...p)),false,'catmullrom',.12);patch(()=>[.25,-.08,z],t=>curve.getPoint(t).toArray(),side>0?3:4,20,7);}
     else patch(t=>[.34-.16*t,-.08-t*.08,side*depth*.86],t=>[.34-.16*t-.64*Math.sin(t*Math.PI),-.08-t*.08-.26*Math.sin(t*Math.PI),side*(depth*.86+.47*Math.pow(Math.sin(t*Math.PI),.8))],side>0?3:4,16,6);
   }
   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geo.setAttribute('aFin',new T.Float32BufferAttribute(types,1));geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setIndex(indices);geo.computeVertexNormals();const probe=new T.Mesh(bodyGeometries[speciesCatalog.indexOf(species)],bodyMats[speciesCatalog.indexOf(species)]);probe.updateMatrixWorld(true);
@@ -170,6 +194,42 @@ function mergeDetails(group){group.updateMatrixWorld(true);const buckets=new Map
     for(const o of list){const geo=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();geo.applyMatrix4(o.matrixWorld);for(const a of attributes)arrays[a].push(...geo.getAttribute(a).array);geo.dispose();o.parent.remove(o);}const geo=new T.BufferGeometry();for(const a of attributes)geo.setAttribute(a,new T.Float32BufferAttribute(arrays[a],a==='uv'?2:3));const merged=new T.Mesh(geo,list[0].material);merged.renderOrder=list[0].renderOrder;group.add(merged);
   }
 }
+// Shallow eye patches are projected onto the actual mesh, never onto an estimated ellipsoid.
+// Iris, pupil and highlight share the skin curvature, with only a tiny surface clearance.
+const eyeDetails=speciesCatalog.map((species,index)=>{
+  const probe=new T.Mesh(bodyGeometries[index],bodyMats[index]);probe.updateMatrixWorld(true);
+  const ray=new T.Raycaster(),parts=[],attachment={samples:0,missing:0,maxGap:0};
+  const x=species.predator?.80:.62,y=species.predator?sharkCenter(x)+species.height*.14:species.height*.24,rx=species.predator?.041:species.heritage?.096:.079,ry=species.predator?.029:species.heritage?.103:.087;
+  function patch(side,cx,cy,sx,sy,lift,material,rings=4,sides=24){const points=[],indices=[];
+    for(let i=0;i<=rings;i++)for(let j=0;j<=sides;j++){
+      const r=i/rings,angle=j/sides*Math.PI*2,px=cx+Math.cos(angle)*r*sx,py=cy+Math.sin(angle)*r*sy;
+      ray.set(new T.Vector3(px,py,side*2),new T.Vector3(0,0,-side));const hit=ray.intersectObject(probe,false)[0];attachment.samples++;
+      if(!hit){attachment.missing++;points.push(px,py,0);}else{const gap=lift+.002*(1-r*r);attachment.maxGap=Math.max(attachment.maxGap,gap);points.push(px,py,hit.point.z+side*gap);}
+      if(i<rings&&j<sides){const a=i*(sides+1)+j,b=a+sides+1;if(side>0)indices.push(a,b,a+1,b,b+1,a+1);else indices.push(a,a+1,b,b,a+1,b+1);}
+    }
+    const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(points,3));geometry.setIndex(indices);geometry.computeVertexNormals();parts.push({geometry,material});
+  }
+  for(const side of [-1,1]){patch(side,x,y,rx,ry,.0015,species.predator?sharkEyeMat:eyeMat);patch(side,x+.008,y-.002,rx*.64,ry*.69,.0045,pupilMat);patch(side,x+.015,y+ry*.29,rx*.16,ry*.15,.0075,shineMat,2,12);}
+  return {parts,attachment,probe};
+});
+const gillDetails=speciesCatalog.map((species,index)=>{
+  const geometries=[],ray=new T.Raycaster();
+  for(const side of [-1,1])for(let slit=0;slit<(species.predator?5:1);slit++){
+    const points=[];for(let j=0;j<=24;j++){
+      const a=-1.1+j/24*2.2,x=species.predator?.31-slit*.075-.025*Math.cos(j/24*Math.PI):.35-.10*Math.cos(a),y=species.predator?(j/24-.5)*species.height*1.25:Math.sin(a)*species.height*.68;
+      ray.set(new T.Vector3(x,y,side*2),new T.Vector3(0,0,-side));const hit=ray.intersectObject(eyeDetails[index].probe,false)[0];if(hit)points.push(hit.point.clone().add(new T.Vector3(0,0,side*.0015)));
+    }
+    geometries.push(new T.BufferGeometry().setFromPoints(points));
+  }return geometries;
+});
+const sharkLipMat=new T.LineBasicMaterial({color:'#606b6b',transparent:true,opacity:.65});
+function addSharkMouth(g,species){
+  // Closed lips: one restrained crescent on the smooth underside, without a painted cavity or teeth.
+  const probe=new T.Mesh(bodyGeometries[speciesCatalog.indexOf(species)],bodyMats[speciesCatalog.indexOf(species)]);probe.updateMatrixWorld(true);
+  const ray=new T.Raycaster(),points=[];
+  for(let i=0;i<=64;i++){const t=i/64,x=.56+.36*Math.sin(t*Math.PI),z=.15*Math.cos(t*Math.PI);ray.set(new T.Vector3(x,-2,z),new T.Vector3(0,1,0));const hit=ray.intersectObject(probe,false)[0];if(hit)points.push(hit.point.clone().add(new T.Vector3(0,-.0018,0)));}
+  g.add(new T.Line(new T.BufferGeometry().setFromPoints(points),sharkLipMat));
+}
 function createFishModel(species){const index=speciesCatalog.indexOf(species),h=species.height,depth=species.depth,rounded=species.heritage,g=new T.Group();g.userData.species=species.id;g.userData.finStyle=rounded?'classic':'flowing';
   // Per-fish uniforms keep stroke timing tied to its actual speed while textures/programs stay shared.
   const swim={phase:{value:0},effort:{value:.6}};g.userData.swim=swim;
@@ -178,19 +238,19 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
     const mesh=new T.Mesh(geometry,material);mesh.userData.swimmingSurface=true;return mesh;
   }
   g.add(swimmingMesh(bodyGeometries[index],bodyMats[index]),swimmingMesh(finGeometries[index],finMats[index]));
+  g.userData.eyeAttachment=eyeDetails[index].attachment;
+  for(const part of eyeDetails[index].parts)g.add(new T.Mesh(part.geometry,part.material));
+  for(const geometry of gillDetails[index])g.add(new T.Line(geometry,gillMaterials[index]));
   for(const side of [-1,1]){
-    const eye=new T.Mesh(eyeGeo,eyeMat);eye.renderOrder=1;eye.position.set(.64,h*.24,side*depth*.81);eye.scale.set(rounded?.109:.088,rounded?.115:.093,.035);g.add(eye);
-    const pupil=new T.Mesh(eyeGeo,pupilMat);pupil.renderOrder=1;pupil.position.copy(eye.position);pupil.position.x+=.009;pupil.position.z+=side*.027;pupil.scale.set(rounded?.068:.052,rounded?.077:.061,.019);g.add(pupil);
-    const shine=new T.Mesh(eyeGeo,shineMat);shine.renderOrder=1;shine.position.copy(pupil.position);shine.position.add(new T.Vector3(.009,.023,side*.016));shine.scale.setScalar(.013);g.add(shine);
-    const gill=[];for(let j=0;j<=20;j++){const a=-1.1+j/20*2.2;gill.push(new T.Vector3(.35-.10*Math.cos(a),Math.sin(a)*h*.68,side*depth*(.93-.14*Math.abs(Math.sin(a)))));}g.add(new T.Line(new T.BufferGeometry().setFromPoints(gill),gillMaterials[index]));
     if(species.id==='moon-angelfish'){const curve=new T.CatmullRomCurve3([[.27,-.6,side*.1],[.13,-1.3,side*.15],[-.25,-1.85,side*.18]].map(p=>new T.Vector3(...p)));g.add(new T.Mesh(new T.TubeGeometry(curve,18,.009,4,false),eyeMat));}
   }
+  if(species.predator){addSharkMouth(g,species);mergeDetails(g);return g;}
   const mouth=new T.Mesh(new T.TorusGeometry(.028,.009,5,12),gillMaterials[index]);mouth.rotation.y=Math.PI/2;mouth.position.set(1.014,-.012,0);g.add(mouth);mergeDetails(g);return g;
 }
 const motion=new AquariumMotion(fish,random),populationPlan=[0,5,1,5,2,5,3,5,4,5];
-for(let i=0;i<52;i++){const species=speciesCatalog[populationPlan[i%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
+for(let i=0;i<54;i++){const species=speciesCatalog[i<2?6:populationPlan[(i-2)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
 function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.g.visible=i<n);}
-setCount(32);
+setCount(34);
 // Tiny suspended particles and pearl-like bubbles, each in a single draw call.
 function particleTexture(ring=false){let c=document.createElement('canvas');c.width=c.height=64;let g=c.getContext('2d'),gr=g.createRadialGradient(27,24,1,32,32,31);if(ring){gr.addColorStop(0,'rgba(190,240,236,0)');gr.addColorStop(.65,'rgba(180,235,233,.02)');gr.addColorStop(.87,'rgba(180,235,233,.28)');gr.addColorStop(.94,'rgba(218,255,243,.65)');gr.addColorStop(1,'rgba(130,215,225,0)');}else{gr.addColorStop(0,'rgba(211,241,220,.7)');gr.addColorStop(.2,'rgba(201,235,215,.4)');gr.addColorStop(1,'rgba(200,240,230,0)');}g.fillStyle=gr;g.fillRect(0,0,64,64);if(ring){g.fillStyle='#e4fff7';g.beginPath();g.ellipse(22,18,4,2,-.7,0,7);g.fill();}return new T.CanvasTexture(c);}
 const dustGeo=new T.BufferGeometry(),dustArray=new Float32Array(550*3);for(let i=0;i<550;i++){dustArray[i*3]=range(-24,24);dustArray[i*3+1]=range(-4,12);dustArray[i*3+2]=range(-15,12);}dustGeo.setAttribute('position',new T.BufferAttribute(dustArray,3));const dust=new T.Points(dustGeo,new T.PointsMaterial({color:'#b0d8c1',size:.07,map:particleTexture(),transparent:true,opacity:.5,depthWrite:false,blending:T.AdditiveBlending}));scene.add(dust);
@@ -224,7 +284,7 @@ let themeTarget=null;const colorTemp=new T.Color();setTheme('day');
 function setPaused(){paused=!paused;$('#pause').setAttribute('aria-pressed',paused);$('#pause').setAttribute('aria-label',paused?'继续动画':'暂停动画');$('#pause svg').innerHTML=paused?'<path d="m8 4 12 8-12 8z"/>':'<path d="M8 5v14M16 5v14"/>';}
 $('#pause').onclick=setPaused;
 $('#theme').onclick=()=>{const themes=['day','sunset','night'];setTheme(themes[(themes.indexOf(theme)+1)%themes.length]);};
-$('#density').onclick=()=>{const counts=[12,24,32,40,52];setCount(counts[(counts.indexOf(visibleCount)+1)%counts.length]);};
+$('#density').onclick=()=>{const counts=[14,26,34,42,54];setCount(counts[(counts.indexOf(visibleCount)+1)%counts.length]);};
 $('#quality').onclick=()=>{quality=quality==='low'?'auto':'low';pixelScale=quality==='low'?1:Math.min(devicePixelRatio,maxDpr);renderer.setPixelRatio(pixelScale);$('#quality').setAttribute('aria-pressed',quality==='low');};
 async function fullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){/* Fullscreen may be unavailable in an embedded browser. */}}
 $('#fullscreen').onclick=fullscreen;
@@ -288,5 +348,5 @@ if(first){first=false;$('#loading').style.opacity=0;setTimeout(()=>$('#loading')
 // Lower resolution after sustained slow frames; no oscillating quality loop.
 perfFrames++;perfTime+=rawDt;if(perfTime>5){if(quality==='auto'&&perfFrames/perfTime<38&&pixelScale>1){pixelScale=Math.max(1,pixelScale-.2);renderer.setPixelRatio(pixelScale);}perfFrames=0;perfTime=0;}
 frameCount++;frameTime+=rawDt;if(frameTime>=1){window.aquariumStats={fps:Math.round(frameCount/frameTime),drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,fish:visibleCount,pixelRatio:renderer.getPixelRatio(),paused,theme,food:foods.length,rounded:fish.slice(0,visibleCount).filter(f=>f.rounded).length};frameCount=0;frameTime=0;}}
-window.aquariumAudit=()=>({...motion.audit(),guide:{open:catalog.open,selected:speciesCatalog[selectedSpecies].id,yaw:guideYaw},species:speciesCatalog.map((s,i)=>({id:s.id,name:s.name,count:fish.slice(0,visibleCount).filter(f=>f.species.id===s.id).length,attachment:finGeometries[i].userData.attachment,opaque:bodyMats[i].opacity===1&&!bodyMats[i].transparent})),finStyles:{classic:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='classic').length,flowing:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='flowing').length},foodScreen:foods.map(f=>{const p=f.mesh.position.clone().project(camera);return {x:(p.x+1)*innerWidth*.5,y:(1-p.y)*innerHeight*.5,batch:f.batch};})});animate();
+window.aquariumAudit=()=>({...motion.audit(),elapsed:motion.elapsed,guide:{open:catalog.open,selected:speciesCatalog[selectedSpecies].id,yaw:guideYaw},species:speciesCatalog.map((s,i)=>({id:s.id,name:s.name,count:fish.slice(0,visibleCount).filter(f=>f.species.id===s.id).length,attachment:finGeometries[i].userData.attachment,eyes:eyeDetails[i].attachment,bodyTriangles:bodyGeometries[i].index.count/3,opaque:bodyMats[i].opacity===1&&!bodyMats[i].transparent})),finStyles:{classic:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='classic').length,flowing:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='flowing').length},foodScreen:foods.map(f=>{const p=f.mesh.position.clone().project(camera);return {x:(p.x+1)*innerWidth*.5,y:(1-p.y)*innerHeight*.5,batch:f.batch};})});animate();
 })();
