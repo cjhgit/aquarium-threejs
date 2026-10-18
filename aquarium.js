@@ -63,7 +63,7 @@ let geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAt
 float h=max(0.,position.y+4.55);transformed.x+=sin(uTime*.6+position.x*.4+position.z)*h*h*.025;`);};scene.add(new T.Mesh(geo,mat));}fernGarden();
 // One immutable record per fish species drives the tank, thumbnails and live field guide.
 const speciesCatalog=window.AQUARIUM_SPECIES,reef=window.AQUARIUM_REEF;
-const environment=reef.decorate(scene),reefLife=reef.populate(scene),guideCatalog=[...speciesCatalog,...reef.species.filter(s=>s.id!=='cleaner-shrimp')];
+const environment=reef.decorate(scene),reefLife=reef.populate(scene,environment.obstacles),guideCatalog=[...speciesCatalog,...reef.species.filter(s=>s.id!=='cleaner-shrimp')];
 function profile(species){return {height:species.height,depth:species.depth};}
 // Reef-shark proportions: https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/blacktip-reef-shark/
 // Joined cubic sections separate the slender shoulders, flat rostrum and narrow caudal peduncle.
@@ -278,6 +278,9 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
 // The orbiting camera is a live sphere obstacle: fish may swim all around it, but never into the lens.
 environment.obstacles.push({center:camera.position,radius:1.7});
 const motion=new AquariumMotion(fish,random,environment),populationPlan=[0,5,1,5,2,5,3,5,4,5];
+// The cruising turtle is a live obstacle: smaller fish glide around its shell just like the rocks.
+const turtleResident=reefLife.residents.find(r=>r.species.id==='sea-turtle');
+if(turtleResident)environment.obstacles.push({center:turtleResident.g.position,radius:1.35});
 for(let i=0;i<54;i++){const species=speciesCatalog[i<2?6:populationPlan[(i-2)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
 function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.model.visible=i<n);}
 setCount(34);
@@ -322,7 +325,7 @@ $('#fullscreen').onclick=fullscreen;
 const catalog=$('#catalog'),previewHost=$('#catalog-preview'),speciesList=$('#species-list');
 let guideRenderer=null,guideScene=null,guideCamera=null,guideModels=[],selectedSpecies=0,guideYaw=0,guidePitch=0,guideDown=null;
 function resizeGuide(){if(!guideRenderer)return;const rect=previewHost.getBoundingClientRect();if(rect.width<1)return;guideRenderer.setSize(rect.width,rect.height,false);guideCamera.aspect=rect.width/rect.height;guideCamera.updateProjectionMatrix();}
-function selectSpecies(index){selectedSpecies=index;guideYaw=0;guidePitch=0;const species=guideCatalog[index];guideModels.forEach((g,i)=>g.visible=i===index);
+function selectSpecies(index){selectedSpecies=index;guideYaw=0;guidePitch=0;const species=guideCatalog[index];if(species.id==='sea-turtle')guideYaw=-.4;guideModels.forEach((g,i)=>g.visible=i===index);
   $('#species-family').textContent=species.family;$('#species-name').textContent=species.name;$('#species-subtitle').textContent=species.subtitle;$('#species-description').textContent=species.description;$('#species-behavior').textContent='习性：'+species.habitat.habit;$('#species-habitat').textContent='偏爱环境：'+species.habitat.environment;$('#species-diet').textContent='食性：'+species.habitat.diet;
   $('#species-features').replaceChildren(...species.features.map(text=>{const tag=document.createElement('span');tag.textContent=text;return tag;}));
   const attributes=[['size','大小',['微小','小型','中型','大型','巨型']],['schooling','聚集',['独处','较低','适中','较高','最高']],['danger','危险',['温和','较低','适中','较高','最高']],['activity','活跃',['安静','较低','适中','活跃','好动']],['speed','速度',['缓慢','较慢','适中','较快','迅捷']]];
@@ -338,7 +341,7 @@ function initGuide(){if(guideRenderer)return;
   guideRenderer=new T.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true,powerPreference:'low-power'});guideRenderer.setPixelRatio(Math.min(devicePixelRatio,1.5));guideRenderer.outputColorSpace=T.SRGBColorSpace;guideRenderer.toneMapping=T.ACESFilmicToneMapping;guideRenderer.toneMappingExposure=1.12;previewHost.prepend(guideRenderer.domElement);
   guideScene=new T.Scene();guideCamera=new T.PerspectiveCamera(43,1,.1,30);guideCamera.position.set(0,.15,5);guideCamera.lookAt(-.35,0,0);
   guideScene.add(new T.HemisphereLight(0xd4f1e4,0x34484c,2));const key=new T.DirectionalLight(0xffefcf,3.2);key.position.set(-2,5,6);guideScene.add(key);const edge=new T.DirectionalLight(0x79d7e6,1.7);edge.position.set(4,2,-3);guideScene.add(edge);
-  guideModels=guideCatalog.map(species=>{const model=species.resident?reef.createModel(species):createFishModel(species);model.scale.setScalar(species.id==='moon-angelfish'?.92:species.resident?1.5:1.7);if(species.resident){model.position.y=species.id==='moon-jelly'?.5:-.3;model.rotation.x=species.id==='ochre-star'||species.id==='pearl-clam'?1.0:.4;}model.visible=false;guideScene.add(model);return model;});
+  guideModels=guideCatalog.map(species=>{const model=species.resident?reef.createModel(species):createFishModel(species);model.scale.setScalar(species.id==='moon-angelfish'?.92:species.id==='sea-turtle'?1.85:species.resident?1.5:1.7);if(species.resident){model.position.y=species.id==='moon-jelly'?.5:species.id==='sea-turtle'?.48:-.3;model.rotation.x=guideTilt(species);if(species.id==='sea-turtle')model.rotation.y=-.4;}model.visible=false;guideScene.add(model);return model;});
   guideRenderer.setSize(240,128,false);guideCamera.aspect=240/128;guideCamera.updateProjectionMatrix();
   guideCatalog.forEach((species,index)=>{
     guideModels.forEach((model,i)=>model.visible=i===index);guideRenderer.render(guideScene,guideCamera);
@@ -359,7 +362,7 @@ function openGuide(){initGuide();catalog.showModal();$('#field-guide').setAttrib
 $('#field-guide').onclick=openGuide;$('#close-catalog').onclick=()=>catalog.close();
 catalog.addEventListener('click',e=>{if(e.target===catalog)catalog.close();});
 catalog.addEventListener('close',()=>{$('#field-guide').setAttribute('aria-expanded','false');guideDown=null;$('#field-guide').focus({preventScroll:true});});
-function guideTilt(species){return species.id==='ochre-star'||species.id==='pearl-clam'?1:species.resident?.4:0;}
+function guideTilt(species){return species.id==='ochre-star'||species.id==='pearl-clam'?1:species.id==='sea-turtle'?.55:species.resident?.4:0;}
 function renderGuide(dt){if(!guideRenderer||!catalog.open)return;const model=guideModels[selectedSpecies];if(model.userData.swim)model.userData.swim.phase.value=(model.userData.swim.phase.value+dt*4.2)%(Math.PI*40);else reef.animateModel(model,elapsed);model.rotation.set(guideTilt(guideCatalog[selectedSpecies]),guideYaw+Math.sin(elapsed*.2)*.08,guidePitch,'YZX');guideRenderer.render(guideScene,guideCamera);}
 
 let down=null,lastPointer=null;

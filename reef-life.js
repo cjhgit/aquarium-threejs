@@ -7,16 +7,18 @@ const entries=[
   ['cleaner-shrimp','绯线清洁虾','甲壳类','绯红节腹 · 象牙白长须',['弯曲分节腹部','白色长触须','展开的尾扇'],'珊瑚旁与礁石缝隙','藻膜与微小碎屑','常在礁脚小范围探索，触须随水流轻摆，偶尔短距离游起再落下。'],
   ['pearl-clam','珠光扇贝','双壳类','放射贝肋 · 珠光内缘',['放射壳纹','成对贝壳','柔软外套膜'],'平缓的沙地','过滤水中的微小浮游生物','固定在沙底，贝壳缓慢开合，靠水流过滤食物。'],
   ['ochre-star','杏橘海星','棘皮类','五条腕足 · 细颗粒表面',['五条渐尖腕足','隆起的中央盘','背部细小颗粒'],'沙地与低矮礁面','底栖有机物','贴着海底极慢移动，用腕足探索周围，几乎不会离开底面。'],
-  ['moon-jelly','月光水母','水母类','半透明伞盖 · 淡紫口腕',['通透伞盖','四瓣口腕','细长触手'],'远离礁石的中上层缓流','细小浮游生物','通过伞盖有节奏地收缩，缓慢上浮、下沉和漂移，保持在开阔水域。']
+  ['moon-jelly','月光水母','水母类','半透明伞盖 · 淡紫口腕',['通透伞盖','四瓣口腕','细长触手'],'远离礁石的中上层缓流','细小浮游生物','通过伞盖有节奏地收缩，缓慢上浮、下沉和漂移，保持在开阔水域。'],
+  ['sea-turtle','橄榄海龟','海龟类','橄榄盾甲 · 桨状前鳍',['分区盾片与甲缘','鳞纹短颈与闭合喙嘴','同步划水的渐尖前鳍'],'礁湾中层的开阔水域','海草与藻类，也捡食沉落的饵料','缓慢下压前鳍滑行，滑翔时舒展双鳍；转弯时身体向内侧倾斜，偶尔下潜贴近海草再回到中层。']
 ];
 const descriptions=[
   '青绿色的宽扁硬壳带有细小侧齿与背部隆脊。四对三段步足从固定的腿根伸出，末节短而尖。小眼睛随眼柄转动，前方的关节钳臂能抬起、收拢，两只钳口各自缓慢开合。',
   '绯红与象牙白相间的节腹弯出柔和的弧线，尾端展开小巧尾扇。两条细长白须伸向前方，比身体还长。',
   '浅玫瑰色的双壳从铰合处向外展开，放射状贝肋形成柔和的起伏。开合间可以看见珠光色的外套膜。',
   '杏橘色的中央盘向外延伸五条渐尖的柔软腕足，背面隆起细小浅色颗粒。圆润的轮廓贴合沙地。',
-  '淡蓝透明的伞盖下，四瓣淡紫色口腕与细长触手一起舒展。伞缘轻轻收拢后再展开，像水中的一盏月光灯。'
+  '淡蓝透明的伞盖下，四瓣淡紫色口腕与细长触手一起舒展。伞缘轻轻收拢后再展开，像水中的一盏月光灯。',
+  '橄榄绿的盾形背甲上铺着排列整齐的盾片，部分盾片带着琥珀色的日射纹。短颈连接圆钝的头部，细小眼睛嵌在两侧，吻端是自然闭合的喙嘴。头颈和鳍肢布满浅色鳞缝。两片渐尖的长前鳍像翅膀一样同步下压，后鳍负责掌舵，让它在水中安静地滑翔。'
 ];
-const species=Object.freeze(entries.map(([id,name,family,subtitle,features,environment,diet,habit],i)=>Object.freeze({id,name,family,subtitle,features:Object.freeze(features),description:descriptions[i],temperament:habit,habitat:Object.freeze({environment,diet,habit}),resident:true,traits:Object.freeze({size:i===4?2:1,schooling:1,danger:1,activity:i===2||i===3?1:2,speed:1})})));
+const species=Object.freeze(entries.map(([id,name,family,subtitle,features,environment,diet,habit],i)=>Object.freeze({id,name,family,subtitle,features:Object.freeze(features),description:descriptions[i],temperament:habit,habitat:Object.freeze({environment,diet,habit}),resident:true,traits:Object.freeze({size:i===5?4:i===4?2:1,schooling:1,danger:1,activity:i===2||i===3?1:2,speed:i===5?2:1})})));
 const material=(color,extra={})=>new T.MeshStandardMaterial({color,roughness:.57,...extra});
 const red=material('#c6654b'),light=material('#f1be8c'),white=material('#f5e4ca'),dark=material('#182c30'),pink=material('#d397aa',{side:T.DoubleSide}),starMat=material('#e6a064');
 const sphere=new T.SphereGeometry(1,12,8);
@@ -34,6 +36,7 @@ function batchStatic(group,animated=[]){
 }
 function createModel(s){const g=new T.Group();g.userData.species=s.id;g.userData.legs=[];g.userData.tendrils=[];
   if(s.id==='tide-crab')return AQUARIUM_CRAB.createModel();
+  if(s.id==='sea-turtle')return AQUARIUM_TURTLE.createModel();
   if(s.id==='cleaner-shrimp'){
     for(let i=0;i<7;i++)blob(g,i%2?white:red,-.47+i*.16,.22+Math.sin(i/6*Math.PI)*.19,0,.14,.16-i*.009,.14-i*.009);
     for(const side of [-1,1]){
@@ -65,10 +68,11 @@ function createModel(s){const g=new T.Group();g.userData.species=s.id;g.userData
 }
 function animateModel(g,t){const u=g.userData;
   if(u.species==='tide-crab'){AQUARIUM_CRAB.animate(g,t);return;}
+  if(u.species==='sea-turtle'){if(!u.turtle.worldControlled)AQUARIUM_TURTLE.animate(g,t);return;}
   u.legs.forEach((leg,i)=>{leg.rotation.y=Math.sin(t*4+i*1.8)*.09;});
   u.tendrils.forEach((m,i)=>{m.rotation.x=Math.sin(t*1.3+i)*.055;m.rotation.z=Math.cos(t*.9+i)*.045;});if(u.lid)u.lid.rotation.x=-.13-.10*(1+Math.sin(t*.7));if(u.bell){const pulse=Math.sin(t*2.2);u.bell.scale.set(1+pulse*.09,1-pulse*.13,1+pulse*.09);}}
-function populate(scene){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72]];
-  for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===4?3.8:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===4?0:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);}
+function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72],[5,3,.5,1.12]];
+  for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===4?3.8:index===5?1.5:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===4?0:index===5?-.9:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);if(s.id==='sea-turtle')residents[id].turtleController=AQUARIUM_TURTLE.makeController(g,obstacles,AquariumMotion.floorHeight);}
   let previous=0;
   const rand=r=>{r.randomState=(r.randomState*1664525+1013904223)>>>0;return r.randomState/4294967296;};
   function crab(r,t,dt){const {g}=r,p=g.position;
@@ -81,7 +85,8 @@ function populate(scene){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],
   }
   return {residents,update(t){const dt=Math.max(0,Math.min(.5,t-previous));previous=t;for(const r of residents){const {g,home,phase,species:s}=r,q=t+phase;
     if(s.id==='tide-crab')crab(r,t,dt);
-    if(s.id==='moon-jelly'){g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6);g.rotation.z=Math.sin(q*.21)*.08;}else{if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
+    if(s.id==='sea-turtle')r.turtleController.update({dt,t});
+    if(s.id==='moon-jelly'){g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6);g.rotation.z=Math.sin(q*.21)*.08;}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
     animateModel(g,q);
   }}};
 }

@@ -173,9 +173,9 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     assert(chases>=2&&chases<=10,`追逐次数异常：${chases}`);assert(maxDuration<=7.1,'追玩没有及时结束');assert(fish.length===count&&fish.every(f=>!f.bites),'追玩移除或吞食了小鱼');
     const shark=fish[0];shark.playTarget=fish[5];engine.setCount(2);engine.update(1/60,[]);assert(!shark.playTarget,'减少数量后仍追逐隐藏的小鱼');return {chases,maxDuration};
   });
-  await test('新增居民数量克制，底栖生物贴底，水母留在中上层',()=>{
-    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===9&&AQUARIUM_REEF.species.length===5,'新增居民数量异常');
-    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
+  await test('新增居民数量克制，底栖生物贴底，水母与海龟各守水层',()=>{
+    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===10&&AQUARIUM_REEF.species.length===6,'新增居民数量异常');
+    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else if(r.species.id==='sea-turtle')assert(p.y>AquariumMotion.floorHeight(p.x,p.z)+.55&&p.y<4.5,'海龟离开中层水域');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
     return Object.fromEntries(AQUARIUM_REEF.species.map(s=>[s.name,life.residents.filter(r=>r.species===s).length]));
   });
   await test('青蟹时停时走并横向探索，虾不出现在场景中',()=>{
