@@ -38,14 +38,10 @@ for(let i=0;i<rp.count;i++){const x=rp.getX(i),y=rp.getY(i),z=rp.getZ(i);let k=1
 const rockInstances=[];
 const rockMats=['#365b58','#54736a','#6d8070','#314e4e'].map(c=>new T.MeshStandardMaterial({color:c,roughness:.98,flatShading:true}));
 function rock(x,y,z,sx,sy,sz){let m=new T.Mesh(rockGeo,rockMats[Math.floor(random()*4)]);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.rotation.set(range(-.3,.3),range(0,6),range(-.3,.3));rockInstances.push(m);return m;}
-rock(10,-3.7,-3,4,2.5,2.6);rock(13,-2.8,-5,3.3,4.2,3);rock(7.8,-4,-1,2,1.5,2);rock(-11,-4,-3,4,2,3);rock(-13,-2.8,-6,2.9,3.4,2.2);rock(11,-4.1,2,2.4,1.1,1.8);
+rock(10,-3.7,-3,4,2.5,2.6);rock(13,-2.8,-5,3.3,4.2,3);rock(7.8,-4,-1,2,1.5,2);rock(-14,-4,-4,2,1.1,2);rock(11,-4.1,2,2.4,1.1,1.8);
 for(let i=0;i<65;i++){let x=range(-19,19),z=range(-10,10),s=range(.08,.38);rock(x,-4.53,z,s,s*.55,s*.8);}
 // Batch all stones by material: four draw calls for the entire rock garden.
 for(const mat of rockMats){const stones=rockInstances.filter(m=>m.material===mat);const batch=new T.InstancedMesh(rockGeo,mat,stones.length);stones.forEach((m,i)=>{m.updateMatrix();batch.setMatrixAt(i,m.matrix);});batch.instanceMatrix.needsUpdate=true;scene.add(batch);}
-// Organic driftwood, with softly tapered limbs.
-const woodMat=new T.MeshStandardMaterial({color:'#505447',roughness:1});
-function branch(points,r){let curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p)));let geo=new T.TubeGeometry(curve,16,r,7,false);scene.add(new T.Mesh(geo,woodMat));}
-branch([[6,-4.5,-2],[7,-3.7,-3],[9,-3,-4],[11,-2.9,-5]],.24);branch([[8,-3.3,-3.5],[7.2,-2.5,-3.8],[7,-1.5,-4]],.12);branch([[-12,-4.3,-2],[-10,-3.7,-3],[-9,-2.7,-4],[-9.5,-1.8,-5]],.2);
 // Each meadow is merged into one geometry; the GPU bends every blade in the current.
 function meadow(color,count,xmin,xmax,zmin,zmax,height,broad=false){const pos=[],norm=[],uv=[],idx=[];let n=0;
 for(let k=0;k<count;k++){let x=range(xmin,xmax),z=range(zmin,zmax),h=range(height*.45,height),w=range(.1,broad?.6:.25),ang=range(0,Math.PI*2),bend=range(-.5,.5);
@@ -55,18 +51,19 @@ if(j<12){let a=n+j*2;idx.push(a,a+1,a+2,a+1,a+3,a+2);}}n+=26;}
 let geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(pos,3));geo.setAttribute('normal',new T.Float32BufferAttribute(norm,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));geo.setIndex(idx);
 let mat=new T.MeshStandardMaterial({color,side:T.DoubleSide,roughness:.7,metalness:.08});mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.vertexShader='uniform float uTime; varying vec2 vPlantUv;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
 vPlantUv=uv;float h=uv.y; transformed.x+=sin(uTime*.65+position.z*.6+position.x*.35+h*2.)*h*h*.48;transformed.z+=cos(uTime*.42+position.x*.3+h*2.)*h*h*.24;`);s.fragmentShader='varying vec2 vPlantUv;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>\ndiffuseColor.rgb*=.64+vPlantUv.y*.5;diffuseColor.rgb+=pow(1.-abs(vPlantUv.x-.5)*2.,20.)*.09;`);};let m=new T.Mesh(geo,mat);scene.add(m);}
-meadow('#438e72',95,-16,-9,-7,0,7,true);meadow('#267b66',90,8,17,-8,-1,8,true);meadow('#6b9d67',65,9,16,0,3,4.2);meadow('#397e63',65,-16,-9,0,4,3.7);meadow('#346d63',85,-18,18,-13,-9,5);meadow('#8aaf76',45,3.5,7.5,-4,0,2.1,true);
+meadow('#438e72',65,-17,-13,-7,0,6,true);meadow('#267b66',90,8,17,-8,-1,8,true);meadow('#6b9d67',65,9,16,0,3,4.2);meadow('#397e63',35,-16,-13,0,4,2.7);meadow('#346d63',85,-18,18,-13,-9,5);meadow('#8aaf76',45,3.5,7.5,-4,0,2.1,true);
 // Rosette leaves on the foreground stones.
 for(let c=0;c<11;c++){let x=c<5?range(-13,-9):range(8,13),z=range(-1,3);meadow(c%2?'#7da67d':'#41816c',9,x-.2,x+.2,z-.2,z+.2,range(1,2.4),true);}
 // Feather-leaf stems add a second silhouette and a warm accent to the gardens.
 function fernGarden(){const positions=[],indices=[],colors=[];let offset=0;
-for(let k=0;k<24;k++){const side=k<12?-1:1,x=side*range(8.1,11.6),z=range(.2,3.2),height=range(1.7,3.6),lean=range(-.6,.6);const color=new T.Color(k%3===0?'#9d9561':'#6eab80');
+for(let k=0;k<24;k++){const side=k<12?-1:1,x=side*(side<0?range(13.4,15.4):range(8.1,11.6)),z=range(.2,3.2),height=range(1.7,3.6),lean=range(-.6,.6);const color=new T.Color(k%3===0?'#9d9561':'#6eab80');
 for(let row=0;row<12;row++){let t=row/12,y=-4.55+t*height,cx=x+lean*t*t,span=(.22+Math.sin(t*Math.PI)*.38)*(1.-t*.4);
 for(let side of [-1,1]){const points=[[cx,y,z],[cx+span*side*.45,y+.13,z+.11],[cx+span*side,y+.25,z],[cx+span*side*.53,y+.015,z-.08]];for(const p of points){positions.push(...p);colors.push(color.r,color.g,color.b);}indices.push(offset,offset+1,offset+2,offset,offset+2,offset+3);offset+=4;}}}
 let geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setIndex(indices);geo.computeVertexNormals();let mat=new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.72});mat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.vertexShader='uniform float uTime;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
 float h=max(0.,position.y+4.55);transformed.x+=sin(uTime*.6+position.x*.4+position.z)*h*h*.025;`);};scene.add(new T.Mesh(geo,mat));}fernGarden();
 // One immutable record per fish species drives the tank, thumbnails and live field guide.
-const speciesCatalog=window.AQUARIUM_SPECIES;
+const speciesCatalog=window.AQUARIUM_SPECIES,reef=window.AQUARIUM_REEF;
+const environment=reef.decorate(scene),reefLife=reef.populate(scene),guideCatalog=[...speciesCatalog,...reef.species.filter(s=>s.id!=='cleaner-shrimp')];
 function profile(species){return {height:species.height,depth:species.depth};}
 // Reef-shark proportions: https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/blacktip-reef-shark/
 // Joined cubic sections separate the slender shoulders, flat rostrum and narrow caudal peduncle.
@@ -278,9 +275,9 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
   g.traverse(part=>{if(!part.geometry||part.userData.swimmingSurface)return;part.updateMatrix();const geometry=part.geometry.clone();geometry.applyMatrix4(part.matrix);part.geometry=geometry;part.position.set(0,0,0);part.rotation.set(0,0,0);part.scale.set(1,1,1);const base=part.material,compile=base.onBeforeCompile;part.material=base.clone();part.material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};part.material.customProgramCacheKey=()=>base.customProgramCacheKey()+'-spine';});
   return g;
 }
-const motion=new AquariumMotion(fish,random),populationPlan=[0,5,1,5,2,5,3,5,4,5];
+const motion=new AquariumMotion(fish,random,environment),populationPlan=[0,5,1,5,2,5,3,5,4,5];
 for(let i=0;i<54;i++){const species=speciesCatalog[i<2?6:populationPlan[(i-2)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
-function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.g.visible=i<n);}
+function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.model.visible=i<n);}
 setCount(34);
 // Tiny suspended particles and pearl-like bubbles, each in a single draw call.
 function particleTexture(ring=false){let c=document.createElement('canvas');c.width=c.height=64;let g=c.getContext('2d'),gr=g.createRadialGradient(27,24,1,32,32,31);if(ring){gr.addColorStop(0,'rgba(190,240,236,0)');gr.addColorStop(.65,'rgba(180,235,233,.02)');gr.addColorStop(.87,'rgba(180,235,233,.28)');gr.addColorStop(.94,'rgba(218,255,243,.65)');gr.addColorStop(1,'rgba(130,215,225,0)');}else{gr.addColorStop(0,'rgba(211,241,220,.7)');gr.addColorStop(.2,'rgba(201,235,215,.4)');gr.addColorStop(1,'rgba(200,240,230,0)');}g.fillStyle=gr;g.fillRect(0,0,64,64);if(ring){g.fillStyle='#e4fff7';g.beginPath();g.ellipse(22,18,4,2,-.7,0,7);g.fill();}return new T.CanvasTexture(c);}
@@ -323,8 +320,8 @@ $('#fullscreen').onclick=fullscreen;
 const catalog=$('#catalog'),previewHost=$('#catalog-preview'),speciesList=$('#species-list');
 let guideRenderer=null,guideScene=null,guideCamera=null,guideModels=[],selectedSpecies=0,guideYaw=0,guidePitch=0,guideDown=null;
 function resizeGuide(){if(!guideRenderer)return;const rect=previewHost.getBoundingClientRect();if(rect.width<1)return;guideRenderer.setSize(rect.width,rect.height,false);guideCamera.aspect=rect.width/rect.height;guideCamera.updateProjectionMatrix();}
-function selectSpecies(index){selectedSpecies=index;guideYaw=0;guidePitch=0;const species=speciesCatalog[index];guideModels.forEach((g,i)=>g.visible=i===index);
-  $('#species-family').textContent=species.family;$('#species-name').textContent=species.name;$('#species-subtitle').textContent=species.subtitle;$('#species-description').textContent=species.description;$('#species-behavior').textContent=species.temperament;
+function selectSpecies(index){selectedSpecies=index;guideYaw=0;guidePitch=0;const species=guideCatalog[index];guideModels.forEach((g,i)=>g.visible=i===index);
+  $('#species-family').textContent=species.family;$('#species-name').textContent=species.name;$('#species-subtitle').textContent=species.subtitle;$('#species-description').textContent=species.description;$('#species-behavior').textContent='习性：'+species.habitat.habit;$('#species-habitat').textContent='偏爱环境：'+species.habitat.environment;$('#species-diet').textContent='食性：'+species.habitat.diet;
   $('#species-features').replaceChildren(...species.features.map(text=>{const tag=document.createElement('span');tag.textContent=text;return tag;}));
   const attributes=[['size','大小',['微小','小型','中型','大型','巨型']],['schooling','聚集',['独处','较低','适中','较高','最高']],['danger','危险',['温和','较低','适中','较高','最高']],['activity','活跃',['安静','较低','适中','活跃','好动']],['speed','速度',['缓慢','较慢','适中','较快','迅捷']]];
   $('#species-attributes').replaceChildren(...attributes.map(([key,label,levels])=>{
@@ -339,9 +336,9 @@ function initGuide(){if(guideRenderer)return;
   guideRenderer=new T.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true,powerPreference:'low-power'});guideRenderer.setPixelRatio(Math.min(devicePixelRatio,1.5));guideRenderer.outputColorSpace=T.SRGBColorSpace;guideRenderer.toneMapping=T.ACESFilmicToneMapping;guideRenderer.toneMappingExposure=1.12;previewHost.prepend(guideRenderer.domElement);
   guideScene=new T.Scene();guideCamera=new T.PerspectiveCamera(43,1,.1,30);guideCamera.position.set(0,.15,5);guideCamera.lookAt(-.35,0,0);
   guideScene.add(new T.HemisphereLight(0xd4f1e4,0x34484c,2));const key=new T.DirectionalLight(0xffefcf,3.2);key.position.set(-2,5,6);guideScene.add(key);const edge=new T.DirectionalLight(0x79d7e6,1.7);edge.position.set(4,2,-3);guideScene.add(edge);
-  guideModels=speciesCatalog.map(species=>{const model=createFishModel(species);model.scale.setScalar(species.id==='moon-angelfish'?.92:1.7);model.visible=false;guideScene.add(model);return model;});
+  guideModels=guideCatalog.map(species=>{const model=species.resident?reef.createModel(species):createFishModel(species);model.scale.setScalar(species.id==='moon-angelfish'?.92:species.resident?1.5:1.7);if(species.resident){model.position.y=species.id==='moon-jelly'?.5:-.3;model.rotation.x=species.id==='ochre-star'||species.id==='pearl-clam'?1.0:.4;}model.visible=false;guideScene.add(model);return model;});
   guideRenderer.setSize(240,128,false);guideCamera.aspect=240/128;guideCamera.updateProjectionMatrix();
-  speciesCatalog.forEach((species,index)=>{
+  guideCatalog.forEach((species,index)=>{
     guideModels.forEach((model,i)=>model.visible=i===index);guideRenderer.render(guideScene,guideCamera);
     const button=document.createElement('button');button.type='button';button.className='species-option';button.dataset.species=species.id;button.setAttribute('aria-label',species.name);button.setAttribute('aria-current','false');
     const img=document.createElement('img');img.src=guideRenderer.domElement.toDataURL('image/png');img.alt='';const label=document.createElement('span'),name=document.createElement('strong'),count=document.createElement('small');name.textContent=species.name;count.dataset.count=species.id;label.append(name,count);button.append(img,label);button.onclick=()=>selectSpecies(index);speciesList.append(button);
@@ -353,14 +350,15 @@ function initGuide(){if(guideRenderer)return;
   new ResizeObserver(()=>{if(catalog.open)resizeGuide();}).observe(previewHost);
 }
 function openGuide(){initGuide();catalog.showModal();$('#field-guide').setAttribute('aria-expanded','true');selectSpecies(selectedSpecies);resizeGuide();
-  const counts=Object.fromEntries(speciesCatalog.map(s=>[s.id,0]));for(const f of fish.slice(0,visibleCount))counts[f.species.id]++;
-  for(const node of speciesList.querySelectorAll('[data-count]'))node.textContent=`水族馆中 ${counts[node.dataset.count]} 尾`;
-  $('#species-count').textContent=`当前 ${visibleCount} 尾居民`;
+  const counts=Object.fromEntries(guideCatalog.map(s=>[s.id,0]));for(const f of [...fish.slice(0,visibleCount),...reefLife.residents])counts[f.species.id]++;
+  for(const node of speciesList.querySelectorAll('[data-count]'))node.textContent=`水族馆中 ${counts[node.dataset.count]} 只`;
+  $('#species-count').textContent=`当前 ${visibleCount+reefLife.residents.length} 位居民`;
 }
 $('#field-guide').onclick=openGuide;$('#close-catalog').onclick=()=>catalog.close();
 catalog.addEventListener('click',e=>{if(e.target===catalog)catalog.close();});
 catalog.addEventListener('close',()=>{$('#field-guide').setAttribute('aria-expanded','false');guideDown=null;$('#field-guide').focus({preventScroll:true});});
-function renderGuide(dt){if(!guideRenderer||!catalog.open)return;const model=guideModels[selectedSpecies];model.userData.swim.phase.value=(model.userData.swim.phase.value+dt*4.2)%(Math.PI*40);model.rotation.set(0,guideYaw+Math.sin(elapsed*.2)*.08,guidePitch,'YZX');guideRenderer.render(guideScene,guideCamera);}
+function guideTilt(species){return species.id==='ochre-star'||species.id==='pearl-clam'?1:species.resident?.4:0;}
+function renderGuide(dt){if(!guideRenderer||!catalog.open)return;const model=guideModels[selectedSpecies];if(model.userData.swim)model.userData.swim.phase.value=(model.userData.swim.phase.value+dt*4.2)%(Math.PI*40);else reef.animateModel(model,elapsed);model.rotation.set(guideTilt(guideCatalog[selectedSpecies]),guideYaw+Math.sin(elapsed*.2)*.08,guidePitch,'YZX');guideRenderer.render(guideScene,guideCamera);}
 
 let down=null,lastPointer=null;
 renderer.domElement.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.button!==0)return;down={x:e.clientX,y:e.clientY,moved:false};lastPointer={x:e.clientX,y:e.clientY};renderer.domElement.setPointerCapture(e.pointerId);});
@@ -373,18 +371,18 @@ document.documentElement.addEventListener('pointerleave',()=>$('.controls').clas
 $('.controls').addEventListener('pointerdown',e=>{if(e.pointerType!=='mouse')revealControls();});
 renderer.domElement.addEventListener('pointercancel',()=>down=null);
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();state.zoom=T.MathUtils.clamp(state.zoom+e.deltaY*.009,18,34);},{passive:false});
-window.addEventListener('keydown',e=>{if(catalog.open){if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();selectSpecies((selectedSpecies+(e.key==='ArrowRight'?1:-1)+speciesCatalog.length)%speciesCatalog.length);}return;}if(e.key.toLowerCase()==='g'){e.preventDefault();openGuide();return;}if(e.code==='Space'){e.preventDefault();setPaused();}if(e.key.toLowerCase()==='h')document.body.classList.toggle('hidden-ui');if(e.key.toLowerCase()==='f')fullscreen();if(e.key==='Escape'){document.body.classList.remove('hidden-ui');document.activeElement.blur();}});
+window.addEventListener('keydown',e=>{if(catalog.open){if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();selectSpecies((selectedSpecies+(e.key==='ArrowRight'?1:-1)+guideCatalog.length)%guideCatalog.length);}return;}if(e.key.toLowerCase()==='g'){e.preventDefault();openGuide();return;}if(e.code==='Space'){e.preventDefault();setPaused();}if(e.key.toLowerCase()==='h')document.body.classList.toggle('hidden-ui');if(e.key.toLowerCase()==='f')fullscreen();if(e.key==='Escape'){document.body.classList.remove('hidden-ui');document.activeElement.blur();}});
 window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 let tabActive=true;document.addEventListener('visibilitychange',()=>{tabActive=!document.hidden;clock.getDelta();});
 let frameCount=0,frameTime=0,perfFrames=0,perfTime=0,first=true;
 function animate(){requestAnimationFrame(animate);let rawDt=Math.min(clock.getDelta(),.05);if(!tabActive)return;let dt=paused?0:rawDt*flow;elapsed+=dt;time.value=elapsed;
 if(themeTarget){let a=1-Math.exp(-rawDt*2);scene.background.lerp(colorTemp.set(themeTarget.bg),a);scene.fog.color.copy(scene.background);ambient.color.lerp(colorTemp.set(themeTarget.sky),a);sun.color.lerp(colorTemp.set(themeTarget.sun),a);sun.intensity=T.MathUtils.lerp(sun.intensity,themeTarget.power,a);renderer.toneMappingExposure=T.MathUtils.lerp(renderer.toneMappingExposure,themeTarget.exposure,a);rayMat.uniforms.uColor.value.lerp(colorTemp.set(themeTarget.ray),a);}
-if(dt){motion.update(dt,foods);dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
+if(dt){motion.update(dt,foods);reefLife.update(elapsed);dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
 for(let i=foods.length-1;i>=0;i--){let f=foods[i];f.life+=dt;f.mesh.position.y-=f.speed*dt;f.mesh.position.x+=Math.sin(elapsed+f.life)*dt*.025;const x=f.mesh.position.x,z=f.mesh.position.z,ground=AquariumMotion.floorHeight(x,z);if(f.mesh.position.y<ground+.06)f.mesh.position.y=ground+.06;if(f.eaten||f.life>24){scene.remove(f.mesh);foods.splice(i,1);}}}
 let framing=innerWidth<800?1.26:1;let camX=Math.sin(state.yaw)*state.zoom,camY=2.5+state.pitch*22,camZ=Math.cos(state.yaw)*state.zoom*framing;camera.position.lerp(v1.set(camX,camY,camZ),1-Math.exp(-rawDt*3));camera.lookAt(0,.25,0);renderer.render(scene,camera);renderGuide(rawDt);
 if(first){first=false;$('#loading').style.opacity=0;setTimeout(()=>$('#loading').remove(),1100);}
 // Lower resolution after sustained slow frames; no oscillating quality loop.
 perfFrames++;perfTime+=rawDt;if(perfTime>5){if(quality==='auto'&&perfFrames/perfTime<38&&pixelScale>1){pixelScale=Math.max(1,pixelScale-.2);renderer.setPixelRatio(pixelScale);}perfFrames=0;perfTime=0;}
 frameCount++;frameTime+=rawDt;if(frameTime>=1){window.aquariumStats={fps:Math.round(frameCount/frameTime),drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,fish:visibleCount,pixelRatio:renderer.getPixelRatio(),paused,theme,food:foods.length,rounded:fish.slice(0,visibleCount).filter(f=>f.rounded).length};frameCount=0;frameTime=0;}}
-window.aquariumAudit=()=>({...motion.audit(),elapsed:motion.elapsed,guide:{open:catalog.open,selected:speciesCatalog[selectedSpecies].id,yaw:guideYaw},species:speciesCatalog.map((s,i)=>({id:s.id,name:s.name,count:fish.slice(0,visibleCount).filter(f=>f.species.id===s.id).length,attachment:finGeometries[i].userData.attachment,eyes:eyeDetails[i].attachment,bodyTriangles:bodyGeometries[i].index.count/3,opaque:bodyMats[i].opacity===1&&!bodyMats[i].transparent})),finStyles:{classic:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='classic').length,flowing:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='flowing').length},foodScreen:foods.map(f=>{const p=f.mesh.position.clone().project(camera);return {x:(p.x+1)*innerWidth*.5,y:(1-p.y)*innerHeight*.5,batch:f.batch};})});animate();
+window.aquariumAudit=()=>({...motion.audit(),elapsed:motion.elapsed,reef:{residents:reefLife.residents.map(r=>({id:r.species.id,position:r.g.position.toArray()})),obstacles:environment.obstacles.length},guide:{open:catalog.open,selected:guideCatalog[selectedSpecies].id,yaw:guideYaw},species:speciesCatalog.map((s,i)=>({id:s.id,name:s.name,count:fish.slice(0,visibleCount).filter(f=>f.species.id===s.id).length,attachment:finGeometries[i].userData.attachment,eyes:eyeDetails[i].attachment,bodyTriangles:bodyGeometries[i].index.count/3,opaque:bodyMats[i].opacity===1&&!bodyMats[i].transparent})),finStyles:{classic:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='classic').length,flowing:fish.slice(0,visibleCount).filter(f=>f.g.userData.finStyle==='flowing').length},foodScreen:foods.map(f=>{const p=f.mesh.position.clone().project(camera);return {x:(p.x+1)*innerWidth*.5,y:(1-p.y)*innerHeight*.5,batch:f.batch};})});animate();
 })();

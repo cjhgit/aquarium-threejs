@@ -43,8 +43,17 @@ const species=[
     palette:['#697980','#a6b3b5','#faf9f1'],finColor:'#87999f',pattern:'shark',tail:'shark-sickle',
     dorsal:[[.12,0],[-.01,.18],[-.22,.38],[-.32,.20],[-.29,.06],[-.49,0]],anal:[[-.73,0],[-.86,.10],[-1.04,0]],
     description:'银灰背部与乳白腹部之间有清晰的分界。宽而扁的短吻沿上唇前伸，下颌自然闭合。头肩之后，修长的躯干逐渐收向细尾柄；后掠胸鳍、偏后的镰形背鳍和上长下短的尾鳍，构成礁鲨的流畅剪影。',
-    features:['银背白腹','宽吻闭合唇线','后掠镰形背鳍'],temperament:'喜欢独自巡游，与同类保持距离。危险程度最高，其他鱼会提前远离，靠近时明显加速避开；不争抢颗粒鱼饵。'}
+    features:['银背白腹','宽吻闭合唇线','后掠镰形背鳍'],temperament:'喜欢独自巡游，与同类保持距离。危险程度最高，其他鱼会提前远离，靠近时明显加速避开；不争抢颗粒鱼饵，偶尔与小鱼短暂追逐玩耍。'}
 ];
-for(const item of species){Object.freeze(item.traits);Object.freeze(item.palette);Object.freeze(item.features);for(const key of ['dorsal','anal']){item[key].forEach(Object.freeze);Object.freeze(item[key]);}Object.freeze(item);}
+const habitats={
+  'amber-fantail':{zone:'bottom',min:-3.3,max:.3,environment:'沙地与低层水域',diet:'底部藻屑、沉落的食物',habit:'多数时间贴近沙地慢游，偶尔到中下层探索，很少接近水面。'},
+  'celadon-sail':{zone:'open',min:-.5,max:4,environment:'开阔的中层水域',diet:'浮游生物与细小食物',habit:'偏爱开阔中层，偶尔上浮或下潜，不会一直固定在同一高度。'},
+  'moon-angelfish':{zone:'grass',min:-2.3,max:1.4,environment:'右侧海草丛边缘',diet:'藻类与细小食物',habit:'喜欢在海草旁停留、缓慢穿行，偶尔离开草丛探索中层。'},
+  'coral-silktail':{zone:'reef',min:-2.6,max:.4,environment:'左侧礁洞与珊瑚边缘',diet:'礁面藻类与细小食物',habit:'偏爱礁石提供的遮蔽，会从拱洞中穿过，也会短暂游到外侧。'},
+  'tidal-swallow':{zone:'surface',min:3.4,max:7.4,environment:'上层透光水域',diet:'浮游植物与细小浮游生物',habit:'大多在上层追随水流觅食，偶尔下降到中层，不贴着水面不动。'},
+  'starlight-tetra':{zone:'grass',min:-1.4,max:2.3,environment:'海草边缘的中下层',diet:'微小浮游生物',habit:'喜欢沿海草边缘结群，受惊时一起散开，平静后回到熟悉的水域。'},
+  'blue-reef-shark':{zone:'open',min:.5,max:3.5,environment:'礁外开阔的中层水域',diet:'本馆不捕食居民，也不争抢颗粒饵',habit:'独自绕行，偶尔选一条小鱼短暂追玩；靠近或数秒后就放慢离开，不伤害小鱼。'}
+};
+for(const item of species){item.habitat=Object.freeze(habitats[item.id]);Object.freeze(item.traits);Object.freeze(item.palette);Object.freeze(item.features);for(const key of ['dorsal','anal']){item[key].forEach(Object.freeze);Object.freeze(item[key]);}Object.freeze(item);}
 globalThis.AQUARIUM_SPECIES=Object.freeze(species);
 })();

@@ -152,6 +152,89 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
       if(frame%600===0)await new Promise(r=>setTimeout(r,0));
     }bites+=fish.reduce((sum,f)=>sum+(f.bites||0),0);
   }assert(bites>15,'集中投喂后实际吃到的食物太少');assert(maxVerticalSlip<1e-7,'拥挤避让或追食后发生独立于游动的垂直位移');assert(maxTurnAcceleration<=5.001,'拥挤避让时突然反转转向速度');return {simulatedSeconds:617,minUp,minGap,bites,maxVerticalSlip,maxTurnAcceleration};});
+  await test('环境偏好影响真实水层，鱼会在偏好范围内上下探索',()=>{
+    const cases=[];for(const s of AQUARIUM_SPECIES.filter(s=>!s.predator)){const {engine,fish}=speciesFixture(s,3);let total=0,inBand=0,lo=Infinity,hi=-Infinity,nearHome=0;
+      advance(engine,140,[],frame=>{if(frame<1800||frame%30)return;for(const f of fish){const p=f.g.position;total++;inBand+=p.y>s.habitat.min-.6&&p.y<s.habitat.max+.6?1:0;lo=Math.min(lo,p.y);hi=Math.max(hi,p.y);nearHome+=s.habitat.zone==='grass'?p.x>4:s.habitat.zone==='reef'?p.x< -6:1;}});
+      assert(inBand/total>.8,`${s.name} 未主要停留在偏好水层`);assert(hi-lo>.3,`${s.name} 一直停在同一高度`);assert(nearHome/total>.6,`${s.name} 未偏好草丛或礁石`);cases.push({id:s.id,inBand:inBand/total,verticalRange:hi-lo});
+    }return cases;
+  });
+  await test('礁洞居民真正穿过拱洞，并避开实体岩壁',()=>{
+    const environment=AQUARIUM_REEF.decorate(new T.Scene()),{engine,fish}=speciesFixture(AQUARIUM_SPECIES[3]);engine.obstacles=environment.obstacles;
+    position(engine,fish[0],-9.6,-2.45,3.8,Math.PI/2);let previous=3.8,crossings=0,minGap=Infinity;
+    advance(engine,120,[],()=>{const f=fish[0],p=f.g.position;if(previous*p.z<0&&p.x> -11&&p.x< -8&&p.y< -1)crossings++;previous=p.z;for(const o of environment.obstacles)minGap=Math.min(minGap,engine.obstacleGap(f,o));});
+    assert(crossings>=2,'鱼没有往返穿过拱洞');assert(minGap>=-.015,`鱼穿入岩壁：${minGap}`);return {crossings,minGap};
+  });
+  await test('鲨鱼偶尔追玩单条小鱼，限时结束且不会吃掉居民',()=>{
+    const {engine,fish}=fixture(34,42,true);const count=fish.length,previous=new Map(),starts=new Map();let chases=0,maxDuration=0;
+    advance(engine,150,[],()=>{for(const f of engine.predators){const old=previous.get(f.id),target=f.playTarget;
+      if(target&&!old){assert(!target.predator&&target.id<engine.count,'追玩目标无效');const last=starts.get(f.id);if(last!==undefined)assert(engine.elapsed-last>27,'追逐过于频繁');starts.set(f.id,engine.elapsed);chases++;}
+      if(old&&!target)maxDuration=Math.max(maxDuration,engine.elapsed-starts.get(f.id));previous.set(f.id,target);
+    }});
+    assert(chases>=2&&chases<=10,`追逐次数异常：${chases}`);assert(maxDuration<=7.1,'追玩没有及时结束');assert(fish.length===count&&fish.every(f=>!f.bites),'追玩移除或吞食了小鱼');
+    const shark=fish[0];shark.playTarget=fish[5];engine.setCount(2);engine.update(1/60,[]);assert(!shark.playTarget,'减少数量后仍追逐隐藏的小鱼');return {chases,maxDuration};
+  });
+  await test('新增居民数量克制，底栖生物贴底，水母留在中上层',()=>{
+    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===9&&AQUARIUM_REEF.species.length===5,'新增居民数量异常');
+    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
+    return Object.fromEntries(AQUARIUM_REEF.species.map(s=>[s.name,life.residents.filter(r=>r.species===s).length]));
+  });
+  await test('青蟹时停时走并横向探索，虾不出现在场景中',()=>{
+    const life=AQUARIUM_REEF.populate(new T.Scene()),crabs=life.residents.filter(r=>r.species.id==='tide-crab');assert(!life.residents.some(r=>r.species.id==='cleaner-shrimp'),'虾仍然可见');
+    const stats=crabs.map(r=>({last:r.g.position.clone(),start:r.g.position.clone(),distance:0,extent:0,moving:0,resting:0,frontSlip:0}));
+    for(let frame=1;frame<=90*60;frame++){life.update(frame/60);crabs.forEach((r,i)=>{const s=stats[i],delta=r.g.position.clone().sub(s.last),front=new T.Vector3(Math.sin(r.g.rotation.y),0,Math.cos(r.g.rotation.y));if(!r.g.userData.crab.turning)s.frontSlip=Math.max(s.frontSlip,Math.abs(delta.dot(front)));s.distance+=Math.hypot(delta.x,delta.z);s.extent=Math.max(s.extent,r.g.position.distanceTo(s.start));s.moving+=r.speed>.1?1:0;s.resting+=r.mode==='rest'?1:0;s.last.copy(r.g.position);assert(r.g.userData.crab.legs.every(l=>l.root.position.distanceTo(l.hip)<1e-10),'螃蟹腿根在身体表面移动');});}
+    for(const s of stats){assert(s.distance>8&&s.extent>3,'青蟹没有明显探索周围沙地');assert(s.moving>800&&s.resting>200,'青蟹没有交替行走与停留');assert(s.frontSlip<1e-8,'青蟹沿身体前后方向爬行');}return stats.map(({distance,extent,frontSlip})=>({distance,extent,frontSlip}));
+  });
+  await test('碰撞修正不会让可见鲨鱼瞬移，提速保持加速度且增强摆尾',()=>{
+    const {engine,fish}=fixture(2,42,true),f=fish[0];engine.setCount(1);position(engine,f,0,2,-3);engine.syncModel(f,0,true);
+    engine.steerFish=f=>{f.steer.set(1,0,0);f.desiredSpeed=f.cruise*1.65;};const beforePhase=f.tailPhase,beforeEffort=f.effort,initialSpeed=f.speed;
+    let previous=f.model.position.clone(),velocity=f.renderVelocity.clone(),maxAcceleration=0,maxStep=0;
+    f.g.position.x+=2.5;
+    advance(engine,4,[],()=>{const p=f.model.position,step=p.clone().sub(previous);maxStep=Math.max(maxStep,step.length());const v=step.multiplyScalar(60);maxAcceleration=Math.max(maxAcceleration,v.clone().sub(velocity).length()*60);previous.copy(p);velocity.copy(v);});
+    assert(maxStep<f.cruise*2.1/60+.0001,'可见鲨鱼发生瞬移');assert(maxAcceleration<=.481,'可见鲨鱼的加速度不连续或没有上限');assert(f.speed>initialSpeed+.3,'鲨鱼没有逐步加速');assert(f.tailPhase-beforePhase>4*(1+initialSpeed*1.6)&&f.effort>beforeEffort+.08,'加速时没有加强摆尾');return {maxStep,maxAcceleration};
+  });
+  await test('堆石礁区共游时不穿岩壁，可见鲨鱼保持连续移动',()=>{
+    const {engine,fish}=fixture(34,11042,true);engine.obstacles=AQUARIUM_REEF.decorate(new T.Scene()).obstacles;let minReef=Infinity,minFish=Infinity,maxVisibleStep=0;const before=engine.predators.map(f=>f.model.position.clone());
+    advance(engine,65,[],frame=>{engine.predators.forEach((f,i)=>{maxVisibleStep=Math.max(maxVisibleStep,f.model.position.distanceTo(before[i]));before[i].copy(f.model.position);});if(frame%60)return;minFish=Math.min(minFish,engine.audit().minGap);for(const f of fish)for(const o of engine.obstacles)minReef=Math.min(minReef,engine.obstacleGap(f,o));});
+    assert(minReef>-.015&&minFish>-.015,`堆石共游发生相交：岩壁 ${minReef}，鱼群 ${minFish}`);assert(maxVisibleStep<.04,'鲨鱼接近堆石时出现短距离跳动');return {minReef,minFish,maxVisibleStep};
+  });
+  await test('蟹壳宽扁，三段步足保留固定腿根和连续关节',()=>{
+    const g=AQUARIUM_CRAB.createModel(),rig=g.userData.crab,box=new T.Box3().setFromObject(rig.body),size=box.getSize(new T.Vector3());
+    assert(size.x>size.z*1.4&&size.y<size.x*.24,'蟹壳仍然是高耸的椭球');assert(rig.legs.length===8,'步足数量不正确');
+    const roots=rig.legs.map(l=>l.root.position.clone());let maxConnection=0;
+    for(let frame=0;frame<300;frame++){AQUARIUM_CRAB.animate(g,frame/30);g.updateMatrixWorld(true);rig.legs.forEach((l,i)=>{
+      assert(l.root.position.distanceTo(roots[i])<1e-12,'腿根在身体表面漂移');assert(l.lengths.length===3&&l.lengths[2]<Math.min(l.lengths[0],l.lengths[1])*.25,'足部末节没有明显短于前两节');
+      const a=l.root.getWorldPosition(new T.Vector3()),b=l.lower.getWorldPosition(new T.Vector3()),c=l.toe.getWorldPosition(new T.Vector3()),d=l.tip.getWorldPosition(new T.Vector3());
+      maxConnection=Math.max(maxConnection,Math.abs(a.distanceTo(b)-l.lengths[0]),Math.abs(b.distanceTo(c)-l.lengths[1]),Math.abs(c.distanceTo(d)-l.lengths[2]));
+    });}assert(maxConnection<1e-8,'步足关节脱开或肢段被拉长');return {shellRatio:size.x/size.z,maxConnection};
+  });
+  await test('眼柄与钳臂能独立活动，钳口能闭拢并围绕真实铰点开合',()=>{
+    const g=AQUARIUM_CRAB.createModel(),rig=g.userData.crab,roots=rig.arms.map(a=>a.shoulder.position.clone()),eyeRoots=rig.eyes.map(e=>e.position.clone()),ranges=rig.arms.map(()=>({minGap:Infinity,maxGap:0,minAngle:Infinity,maxAngle:-Infinity}));
+    let eyeMin=Infinity,eyeMax=-Infinity,armMin=Infinity,armMax=-Infinity;
+    for(let frame=0;frame<900;frame++){AQUARIUM_CRAB.animate(g,frame/30);g.updateMatrixWorld(true);rig.arms.forEach((a,i)=>{const r=ranges[i],gap=a.fixedTip.getWorldPosition(new T.Vector3()).distanceTo(a.movingTip.getWorldPosition(new T.Vector3()));r.minGap=Math.min(r.minGap,gap);r.maxGap=Math.max(r.maxGap,gap);r.minAngle=Math.min(r.minAngle,a.jaw.rotation.y);r.maxAngle=Math.max(r.maxAngle,a.jaw.rotation.y);assert(a.shoulder.position.distanceTo(roots[i])<1e-12,'钳臂根部脱离身体');assert(a.jaw.position.distanceTo(new T.Vector3(-.075,0,.22))<1e-12,'钳口铰点漂移');});
+      rig.eyes.forEach((e,i)=>{eyeMin=Math.min(eyeMin,e.rotation.y);eyeMax=Math.max(eyeMax,e.rotation.y);assert(e.position.distanceTo(eyeRoots[i])<1e-12,'眼柄根部脱离眼窝');const pupil=e.children.find(o=>o.material?.color?.getHexString()==='171f1b');assert(pupil&&Math.max(pupil.scale.x,pupil.scale.y,pupil.scale.z)<.04,'眼睛仍然过大');});armMin=Math.min(armMin,rig.arms[0].shoulder.rotation.x);armMax=Math.max(armMax,rig.arms[0].shoulder.rotation.x);
+    }
+    assert(eyeMax-eyeMin>.35&&armMax-armMin>.18,'眼柄或钳臂没有明显活动');for(const r of ranges){assert(r.minGap<.03&&r.maxGap>.13&&r.maxAngle-r.minAngle>.5,'蟹钳没有真正闭拢与张开');}return {eyeRotationRange:eyeMax-eyeMin,armRotationRange:armMax-armMin,ranges};
+  });
+  await test('蟹足贴地不打滑，转身绕支撑足走弧线，低帧率也不拉伸',()=>{
+    const result=[];for(const fps of [60,25]){const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene),crabs=life.residents.filter(r=>r.species.id==='tide-crab'),previous=new Map(),before=new Map();let maxSlip=0,maxIKError=0,minSupport=8,turnSamples=0,maxPivotError=0,minGround=Infinity;
+      for(let frame=1;frame<=90*fps;frame++){for(const r of crabs)before.set(r,{p:r.g.position.clone(),yaw:r.g.rotation.y});life.update(frame/fps);scene.updateMatrixWorld(true);
+        for(const r of crabs){const rig=r.g.userData.crab,old=before.get(r);minSupport=Math.min(minSupport,rig.legs.filter(l=>l.stance).length);
+          for(const l of rig.legs){const tip=l.tip.getWorldPosition(new T.Vector3()),last=previous.get(l);maxIKError=Math.max(maxIKError,tip.distanceTo(l.anchor),l.reachError);if(last?.stance&&l.stance)maxSlip=Math.max(maxSlip,tip.distanceTo(last.tip));minGround=Math.min(minGround,tip.y-AquariumMotion.floorHeight(tip.x,tip.z));previous.set(l,{tip,stance:l.stance});}
+          if(rig.turning&&rig.pivot&&r.speed<1e-8){const pivot=rig.pivot.anchor,expected=old.p.clone().sub(pivot).applyAxisAngle(new T.Vector3(0,1,0),r.g.rotation.y-old.yaw).add(pivot);maxPivotError=Math.max(maxPivotError,Math.hypot(expected.x-r.g.position.x,expected.z-r.g.position.z));assert(Math.hypot(old.p.x-r.g.position.x,old.p.z-r.g.position.z)>1e-6,'转身仍然绕身体中心旋转');assert(rig.pivot.stance,'用离地的脚当转身支点');turnSamples++;}
+        }
+      }
+      assert(maxSlip<1e-7&&maxIKError<1e-7,'支撑脚打滑、关节脱节或步幅超出腿长');assert(minSupport>=4,'同时抬起过多步足');assert(minGround>-.002,'足尖穿入沙地');assert(turnSamples>100&&maxPivotError<1e-8,'转身没有绕落地步足协调换步');result.push({fps,maxSlip,maxIKError,minSupport,turnSamples,maxPivotError});
+    }return result;
+  });
+  await test('八条腿规则成排，俯视三段共线，关节只在腿的竖直平面内屈伸',()=>{
+    const g=AQUARIUM_CRAB.createModel(),rig=g.userData.crab;let maxOffLine=0,maxRowDrift=0;
+    for(let frame=0;frame<240;frame++){AQUARIUM_CRAB.animate(g,frame/30);g.updateMatrixWorld(true);
+      for(const l of rig.legs){const joints=[l.root,l.lower,l.toe,l.tip].map(o=>o.getWorldPosition(new T.Vector3()));for(const p of joints)maxRowDrift=Math.max(maxRowDrift,Math.abs(p.z-l.hip.z));assert(Math.abs(l.lower.rotation.x)+Math.abs(l.lower.rotation.y)+Math.abs(l.toe.rotation.x)+Math.abs(l.toe.rotation.y)<1e-12,'肘、末节关节仍在前后甩动');}
+    }
+    for(const side of [-1,1]){const legs=rig.legs.filter(l=>l.side===side);for(let i=1;i<4;i++)assert(Math.abs(legs[i].hip.z-legs[i-1].hip.z-.19)<1e-10,'四条腿的前后间距不规律');}
+    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);for(let frame=1;frame<=60*60;frame++){life.update(frame/60);scene.updateMatrixWorld(true);for(const r of life.residents.filter(r=>r.species.id==='tide-crab'))for(const l of r.g.userData.crab.legs){const joints=[l.root,l.lower,l.toe,l.tip].map(o=>o.getWorldPosition(new T.Vector3())),a=joints[0],b=joints[3],dx=b.x-a.x,dz=b.z-a.z,length=Math.hypot(dx,dz);for(const p of joints)maxOffLine=Math.max(maxOffLine,Math.abs((p.x-a.x)*dz-(p.z-a.z)*dx)/Math.max(length,.001));}}
+    assert(maxRowDrift<1e-8,'直行步态出现前后摆腿');assert(maxOffLine<1e-8,'俯视腿部三段折成锯齿');return {maxRowDrift,maxOffLine};
+  });
   return {passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results};
 };
 })();
