@@ -38,9 +38,11 @@ const {geometry:rockGeo,meshes:rockInstances,obstacles:rockObstacles}=AQUARIUM_R
 // Batch all stones by material: four draw calls for the entire rock garden.
 for(const mat of rockMats){const stones=rockInstances.filter(m=>m.material===mat);const batch=new T.InstancedMesh(rockGeo,mat,stones.length);stones.forEach((m,i)=>{m.updateMatrix();batch.setMatrixAt(i,m.matrix);});batch.instanceMatrix.needsUpdate=true;scene.add(batch);}
 // Each meadow is merged into one geometry; the GPU bends every blade in the current.
+const grazingSites=[];
 function meadow(color,count,xmin,xmax,zmin,zmax,height,broad=false){const pos=[],norm=[],uv=[],idx=[];let n=0;
 for(let k=0;k<count;k++){let x=range(xmin,xmax),z=range(zmin,zmax),h=range(height*.45,height),w=range(.1,broad?.6:.25),ang=range(0,Math.PI*2),bend=range(-.5,.5);
 for(let j=0;j<=12;j++){let t=j/12,xx=x+Math.sin(t*2.3)*bend,yy=-4.6+t*h,zz=z+.25*Math.sin(t*2);let width=w*Math.pow(Math.sin(Math.PI*t),.7)+.006;
+if(j===8&&k%3===0)grazingSites.push({kind:'grass',point:new T.Vector3(xx,yy,zz),height:t});
 for(let s of [-1,1]){pos.push(xx+s*width*Math.cos(ang),yy,zz+s*width*Math.sin(ang));norm.push(Math.sin(ang),.15,Math.cos(ang));uv.push((s+1)/2,t);}
 if(j<12){let a=n+j*2;idx.push(a,a+1,a+2,a+1,a+3,a+2);}}n+=26;}
 let geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(pos,3));geo.setAttribute('normal',new T.Float32BufferAttribute(norm,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));geo.setIndex(idx);
@@ -60,6 +62,13 @@ float h=max(0.,position.y+4.55);transformed.x+=sin(uTime*.6+position.x*.4+positi
 const speciesCatalog=window.AQUARIUM_SPECIES,reef=window.AQUARIUM_REEF;
 const environment=reef.decorate(scene);
 environment.obstacles.push(...rockObstacles);
+// Small natural morsels on the open sand remain available without a feeding click.
+const morselGeo=new T.SphereGeometry(1,5,4),morselMat=new T.MeshStandardMaterial({color:'#827852',roughness:1});
+const sandSites=[];let detritusSeed=32147;const detritusRandom=()=>{detritusSeed=(detritusSeed*1664525+1013904223)>>>0;return detritusSeed/4294967296;};
+for(let i=0;i<70;i++){const x=-8+detritusRandom()*16,z=-3+detritusRandom()*12;sandSites.push({kind:'sand',point:new T.Vector3(x,AquariumMotion.floorHeight(x,z)+.07,z)});}
+const morsels=new T.InstancedMesh(morselGeo,morselMat,sandSites.length),morselTransform=new T.Object3D();
+sandSites.forEach((site,i)=>{const size=.025+(i%4)*.007;morselTransform.position.copy(site.point);morselTransform.scale.set(size,size*.55,size*1.3);morselTransform.updateMatrix();morsels.setMatrixAt(i,morselTransform.matrix);});scene.add(morsels);
+environment.grazingSites=[...grazingSites,...sandSites];
 const reefLife=reef.populate(scene,environment.obstacles),guideCatalog=[...speciesCatalog,...reef.species.filter(s=>s.id!=='cleaner-shrimp')];
 function profile(species){return {height:species.height,depth:species.depth};}
 // Reef-shark proportions: https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/blacktip-reef-shark/
@@ -283,6 +292,15 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
   mergeDetails(g);
   // Bake detail transforms into fish-local space before applying the same spine.
   g.traverse(part=>{if(!part.geometry||part.userData.swimmingSurface)return;part.updateMatrix();const geometry=part.geometry.clone();geometry.applyMatrix4(part.matrix);part.geometry=geometry;part.position.set(0,0,0);part.rotation.set(0,0,0);part.scale.set(1,1,1);const base=part.material,compile=base.onBeforeCompile;part.material=base.clone();part.material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};part.material.customProgramCacheKey=()=>base.customProgramCacheKey()+'-spine';});
+  if(!species.predator){
+    // A shallow, narrow mouth sits inside the snout silhouette; lips blend into the skin.
+    const geometry=new T.SphereGeometry(1,10,8),lipMat=new T.MeshStandardMaterial({color:species.palette[1],roughness:.9});
+    const mouthColor=new T.Color(species.palette[0]).lerp(new T.Color(species.palette[1]),.22);
+    const cavity=new T.Mesh(geometry,new T.MeshStandardMaterial({color:mouthColor,roughness:1}));cavity.position.set(1.001,0,0);cavity.scale.set(.007,.004,.03);
+    const upper=new T.Mesh(geometry,lipMat),lower=new T.Mesh(geometry,lipMat);
+    upper.scale.set(.013,.005,.032);lower.scale.copy(upper.scale);upper.position.set(.992,.006,0);lower.position.set(.992,-.006,0);g.add(cavity,upper,lower);
+    g.userData.mouth={cavity,upper,lower,open:0};
+  }
   return g;
 }
 // The orbiting camera is a live sphere obstacle: fish may swim all around it, but never into the lens.
@@ -481,7 +499,9 @@ let tabActive=true;document.addEventListener('visibilitychange',()=>{tabActive=!
 let frameCount=0,frameTime=0,perfFrames=0,perfTime=0,first=true;
 function animate(){requestAnimationFrame(animate);let rawDt=Math.min(clock.getDelta(),.05);if(!tabActive)return;let dt=paused?0:rawDt*flow;elapsed+=dt;time.value=elapsed;
 if(themeTarget){let a=1-Math.exp(-rawDt*2);scene.background.lerp(colorTemp.set(themeTarget.bg),a);scene.fog.color.copy(scene.background);ambient.color.lerp(colorTemp.set(themeTarget.sky),a);ambient.groundColor.lerp(colorTemp.set(themeTarget.ground),a);sandMat.color.lerp(colorTemp.set(themeTarget.sand),a);sun.color.lerp(colorTemp.set(themeTarget.sun),a);sun.intensity=T.MathUtils.lerp(sun.intensity,themeTarget.power,a);renderer.toneMappingExposure=T.MathUtils.lerp(renderer.toneMappingExposure,themeTarget.exposure,a);rayMat.uniforms.uColor.value.lerp(colorTemp.set(themeTarget.ray),a);surfaceMat.uniforms.uSunPower.value=sun.intensity;scene.fog.density=T.MathUtils.lerp(scene.fog.density,themeTarget.fog,a);surfaceMat.uniforms.uSkyTop.value.lerp(colorTemp.set(themeTarget.skyTop),a);surfaceMat.uniforms.uSkyHorizon.value.lerp(colorTemp.set(themeTarget.skyHorizon),a);}
-if(dt){reefLife.update(elapsed);motion.update(dt,foods);dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
+if(dt){reefLife.update(elapsed);motion.update(dt,foods);
+for(let i=0;i<sandSites.length;i++){const site=sandSites[i],hidden=(site.availableAt||0)>motion.elapsed;if(hidden===!!site.hidden)continue;site.hidden=hidden;const size=hidden?0:.025+(i%4)*.007;morselTransform.position.copy(site.point);morselTransform.scale.set(size,size*.55,size*1.3);morselTransform.updateMatrix();morsels.setMatrixAt(i,morselTransform.matrix);morsels.instanceMatrix.needsUpdate=true;}
+dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
 for(let i=foods.length-1;i>=0;i--){let f=foods[i];f.life+=dt;f.mesh.position.y-=f.speed*dt;f.mesh.position.x+=Math.sin(elapsed+f.life)*dt*.025;const x=f.mesh.position.x,z=f.mesh.position.z,ground=AquariumMotion.floorHeight(x,z);if(f.mesh.position.y<ground+.06)f.mesh.position.y=ground+.06;if(f.eaten||f.life>24){scene.remove(f.mesh);foods.splice(i,1);}}}
 let framing=innerWidth<800?1.26:1;let camX=Math.sin(state.yaw)*state.zoom,camY=2.5+state.pitch*22,camZ=Math.cos(state.yaw)*state.zoom*framing;camera.position.lerp(v1.set(camX,camY,camZ),1-Math.exp(-rawDt*3));camera.lookAt(0,.25,0);renderer.render(scene,camera);renderGuide(rawDt);
 if(first){first=false;$('#loading').style.opacity=0;setTimeout(()=>$('#loading').remove(),1100);}

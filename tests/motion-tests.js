@@ -13,6 +13,48 @@ function pellet(x,y,z){return {mesh:{position:new T.Vector3(x,y,z)},speed:.17,li
 function advance(engine,seconds,foods=[],sample=()=>{}){for(let i=0;i<Math.ceil(seconds*60);i++){engine.update(1/60,foods);sample(i);}}
 globalThis.runMotionTests=async function(report=()=>{}){const results=[];
   async function test(name,run){try{const detail=await run();results.push({name,pass:true,detail});}catch(error){results.push({name,pass:false,detail:error.message});}report(results[results.length-1]);await new Promise(r=>setTimeout(r,0));}
+  await test('无需投食也会在沙地或摇摆草叶上连续啄食，嘴部接触后才计数',()=>{
+    const cases=[];
+    for(const fps of [25,60])for(const kind of ['sand','grass']){
+      const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[0]),f=fish[0];
+      const point=new T.Vector3(1,kind==='sand'?AquariumMotion.floorHeight(1,0)+.07:-2,0),site={kind,point,height:.66};
+      engine.grazingSites=[site];position(engine,f,-1,-2,0);engine.syncModel(f,0,true);f.nextForage=0;
+      let open=0,minPitch=0,stroke=0,last=f.model.position.clone(),maxStep=0,minFloor=Infinity,finished=false;
+      for(let i=0;i<fps*24;i++){
+        engine.update(1/fps,[]);open=Math.max(open,f.mouthOpen);minPitch=Math.min(minPitch,f.pitch);
+        maxStep=Math.max(maxStep,f.model.position.distanceTo(last));last.copy(f.model.position);
+        minFloor=Math.min(minFloor,f.g.position.y-engine.minY(f));
+        if(f.forage?.stage==='peck')stroke++;
+        if(f.grazingBites>=2&&!f.forage){finished=true;break;}
+      }
+      assert(finished,`${kind}/${fps} 没有完成连续啄食并离开`);assert(open>.8&&stroke>fps*.5,'嘴没有明显张合或没有啄食停顿');
+      assert(maxStep<.08&&minFloor>-.015,'啄食时发生突跳或穿入沙地');
+      if(kind==='sand'){assert(minPitch<-1.15,'没有低头啄沙');assert(site.availableAt>engine.elapsed,'吃过的沙地食物没有耗尽');}
+      cases.push({kind,fps,bites:f.grazingBites,open,minPitch,maxStep,minFloor});
+    }return cases;
+  });
+  await test('日常觅食会被投食和危险打断，鲨鱼与冲刺鱼不啄草',()=>{
+    const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[0]),f=fish[0];position(engine,f,-1,-2,0);
+    engine.grazingSites=[{kind:'grass',point:new T.Vector3(1,-2,0),height:.66}];f.nextForage=0;advance(engine,1);
+    assert(f.forage,'没有开始觅食');f.nextSense=0;const food=pellet(f.g.position.x+2,f.g.position.y,0);advance(engine,.25,[food]);
+    assert(f.targetFood===food&&!f.forage,'投下鱼饵后没有中断日常觅食');
+    engine.releaseFood(f,false);f.cooldownUntil=0;f.nextForage=0;f.fear=0;advance(engine,.1);assert(f.forage,'无法重新进入觅食');
+    f.fear=.5;advance(engine,.05);assert(!f.forage&&f.mouthOpen===0,'受惊后继续啄食');
+    for(const species of AQUARIUM_SPECIES.filter(s=>s.predator||s.locomotion==='burst-rest')){const other=speciesFixture(species);other.engine.grazingSites=engine.grazingSites;other.fish[0].nextForage=0;advance(other.engine,10);assert(!other.fish[0].forage&&other.fish[0].grazingBites===0,'不适合的鱼种进入啄食');}
+  });
+  await test('真实礁石与鲨鱼混游中可以完成日常啄食，身体保持分离',()=>{
+    const garden=AQUARIUM_REEF.makeRockGarden(Array.from({length:4},()=>new T.MeshBasicMaterial()),seeded(11042));
+    const sites=[];for(let x=-6;x<=6;x+=2)for(let z=0;z<=8;z+=2)sites.push({kind:'sand',point:new T.Vector3(x,AquariumMotion.floorHeight(x,z)+.07,z)});
+    for(let x=4;x<9;x++)sites.push({kind:'grass',point:new T.Vector3(x,-1.5,1),height:.66});
+    const {engine,fish}=fixture(15,11042,true,{obstacles:garden.obstacles,grazingSites:sites},AQUARIUM_SHARK_SCALES);
+    // Put one bottom grazer in an open foreground patch; other residents keep their ordinary routes.
+    const grazer=fish.find(f=>f.species.id==='amber-fantail');position(engine,grazer,-1,-2,6);engine.syncModel(grazer,0,true);grazer.nextForage=0;
+    let minGap=Infinity,minRock=Infinity,inspect=0;advance(engine,55,[],frame=>{
+      if(frame%30)return;minGap=Math.min(minGap,engine.audit().minGap);
+      for(const f of fish){if(f.forage?.stage==='inspect')inspect++;for(const o of garden.obstacles)minRock=Math.min(minRock,engine.obstacleGap(f,o));}
+    });
+    const bites=fish.reduce((n,f)=>n+f.grazingBites,0);assert(bites>=1&&inspect>0,`混游中没有实际停留啄食：${bites}/${inspect}`);assert(minGap>-.015&&minRock>-.015,'混游觅食时穿模');return {bites,inspect,minGap,minRock};
+  });
   await test('大中小三条鲨鱼在实际礁湾共游，体型、间距与运动保持正确',()=>{
     const scales=AQUARIUM_SHARK_SCALES;let minGap=Infinity,minRock=Infinity,minJelly=Infinity,maxStep=0,worstRock=null;
     for(const [fps,count] of [[25,35],[60,55]]){const scene=new T.Scene(),environment=AQUARIUM_REEF.decorate(scene),garden=AQUARIUM_REEF.makeRockGarden(Array.from({length:4},()=>new T.MeshBasicMaterial()),seeded(11042));environment.obstacles.push(...garden.obstacles);
