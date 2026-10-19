@@ -269,8 +269,8 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     const shark=fish[0];shark.playTarget=fish[5];engine.setCount(2);engine.update(1/60,[]);assert(!shark.playTarget,'减少数量后仍追逐隐藏的小鱼');return {chases,maxDuration};
   });
   await test('新增居民数量克制，底栖生物贴底，水母与海龟各守水层',()=>{
-    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===10&&AQUARIUM_REEF.species.length===6,'新增居民数量异常');
-    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else if(r.species.id==='sea-turtle')assert(p.y>AquariumMotion.floorHeight(p.x,p.z)+.55&&p.y<4.5,'海龟离开中层水域');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
+    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===11&&AQUARIUM_REEF.species.length===7,'新增居民数量异常');
+    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else if(r.species.id==='manta-ray')assert(p.y>7&&p.y<9,'蝠鲼离开表层');else if(r.species.id==='sea-turtle')assert(p.y>AquariumMotion.floorHeight(p.x,p.z)+.55&&p.y<4.5,'海龟离开中层水域');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
     return Object.fromEntries(AQUARIUM_REEF.species.map(s=>[s.name,life.residents.filter(r=>r.species===s).length]));
   });
   await test('青蟹时停时走并横向探索，虾不出现在场景中',()=>{
@@ -331,9 +331,9 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     assert(maxRowDrift<1e-8,'直行步态出现前后摆腿');assert(maxOffLine<1e-8,'俯视腿部三段折成锯齿');return {maxRowDrift,maxOffLine};
   });
   await test('水母伞盖与触须碰撞包络随脉动、摆动和漂移更新',()=>{
-    const scene=new T.Scene(),obstacles=[],life=AQUARIUM_REEF.populate(scene,obstacles),jellies=life.residents.filter(r=>r.species.id==='moon-jelly');assert(obstacles.length===4,'水母未注册双层碰撞体');let maxOutside=0;
+    const scene=new T.Scene(),obstacles=[],life=AQUARIUM_REEF.populate(scene,obstacles),jellies=life.residents.filter(r=>r.species.id==='moon-jelly');assert(obstacles.filter(o=>o.kind==='jellyfish').length===4,'水母未注册双层碰撞体');let maxOutside=0;
     for(let frame=0;frame<120;frame++){life.update(frame/20);scene.updateMatrixWorld(true);for(const r of jellies){assert(r.colliders.every(o=>o.velocity===r.driftVelocity&&o.owner===r),'碰撞体未绑定活动水母');r.g.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position,v=new T.Vector3();for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);const distance=Math.min(...r.colliders.map(c=>Math.hypot((v.x-c.center.x)/c.radii.x,(v.y-c.center.y)/c.radii.y,(v.z-c.center.z)/c.radii.z)));maxOutside=Math.max(maxOutside,distance-1);}});}}
-    assert(maxOutside<.025,`可见伞盖或触须超出碰撞范围：${maxOutside}`);return {jellies:jellies.length,colliders:obstacles.length,maxOutside};
+    assert(maxOutside<.025,`可见伞盖或触须超出碰撞范围：${maxOutside}`);return {jellies:jellies.length,colliders:obstacles.filter(o=>o.kind==='jellyfish').length,maxOutside};
   });
   await test('鲨鱼提前绕开水母，正面接近时稳定选择一侧并减速',()=>{
     for(const direction of [-1,1]){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0],o={kind:'jellyfish',center:new T.Vector3(0,2,0),radii:new T.Vector3(.75,1,.75),velocity:new T.Vector3()};engine.obstacles=[o];position(engine,f,-direction*10,2,0,direction===1?0:Math.PI);f.steer.copy(f.axis);f.desiredSpeed=f.cruise;assert(engine.obstacleGap(f,o)>1,'提前避让检查起点太近');engine.avoidPredators(f,1/60);assert(Math.abs(f.steer.z)>.1,'迎面接近没有侧向绕行');assert(f.desiredSpeed<f.cruise*.95,'接近水母没有减速');}
