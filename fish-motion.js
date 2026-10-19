@@ -111,7 +111,7 @@ class AquariumMotion {
     f.goal.y=clamp(f.goal.y,Math.max(-3.4,this.minY(f,f.goal.x,f.goal.z)+.25),h?.zone==='surface'?7.6:5.2);
     f.nextGoal=this.elapsed+4+(6-f.traits.activity)+r()*6;
   }
-  place(f,limit){if(f.predator){const a=Math.PI*.5+f.id*Math.PI;f.patrolAngle=a;f.g.position.set(Math.sin(a)*12,2+f.id*.6,-5+Math.cos(a)*2.8);f.yaw=Math.atan2(Math.sin(a)*2.8,Math.cos(a)*12);this.orient(f);f.velocity.copy(f.axis).multiplyScalar(f.speed);return;}for(let attempt=0;attempt<400;attempt++){
+  place(f,limit){if(f.predator){const a=f.id<2?Math.PI*.5+f.id*Math.PI:Math.PI+(f.id-2)*2.4;f.patrolAngle=a;f.g.position.set(Math.sin(a)*12,2+f.id*.6,-5+Math.cos(a)*2.8);f.yaw=Math.atan2(Math.sin(a)*2.8,Math.cos(a)*12);this.orient(f);f.velocity.copy(f.axis).multiplyScalar(f.speed);return;}for(let attempt=0;attempt<400;attempt++){
     f.g.position.copy(this.habitatPoint(f));
     // A crowded preferred habitat may be inside a jelly's safety zone.
     // Expand horizontally rather than accepting an unsafe final sample.
@@ -468,16 +468,18 @@ class AquariumMotion {
   }
   avoidRenderedRocks(f,desired){
     const constraints=[],rotation=f.model.quaternion.clone(),state=f.visualState;
+    // A larger body sweeps a wider arc while its momentum settles.
+    const rockClearance=2.4+Math.max(0,f.size-(f.species?.size??f.size))*2;
     // Evaluate the coming turn and half-stroke as well as the current pose.
     // A turning tail can approach a wall even when root velocity points away.
     for(const horizon of [0,1.5,3]){
       if(horizon){const e=new T.Euler().setFromQuaternion(rotation,'YZX');e.y+=f.yawVelocity*horizon;e.z+=clamp(f.pitchVelocity*horizon,-.2,.2);f.model.quaternion.setFromEuler(e);f.visualState={...state,phase:state.phase+horizon*(1+f.speed*1.6)};}
       const bounds=this.renderedBounds(f);
       for(const o of this.obstacles){if(o.kind!=='rock'&&o.kind!=='jellyfish')continue;
-        const jelly=o.kind==='jellyfish',range=jelly?9:5,c=this.obstacleContact(bounds,o,0,range);
+        const jelly=o.kind==='jellyfish',range=jelly?9:Math.max(5,rockClearance+2.6),c=this.obstacleContact(bounds,o,0,range);
         if(c.gap>range)continue;
         const normal=new T.Vector3(c.x,c.y,c.z).normalize();
-        constraints.push({normal,priority:jelly?0:1,minimum:jelly?(5-c.gap)*.9+normal.dot(o.velocity||new T.Vector3()):(2.4-c.gap)*.65});
+        constraints.push({normal,priority:jelly?0:1,minimum:jelly?(5-c.gap)*.9+normal.dot(o.velocity||new T.Vector3()):(rockClearance-c.gap)*.65});
       }
     }
     f.model.quaternion.copy(rotation);f.visualState=state;

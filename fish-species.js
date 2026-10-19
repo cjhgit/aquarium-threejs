@@ -63,6 +63,8 @@ const habitats={
 };
 for(const item of species){item.habitat=Object.freeze(habitats[item.id]);Object.freeze(item.traits);Object.freeze(item.palette);Object.freeze(item.features);for(const key of ['dorsal','anal']){item[key].forEach(Object.freeze);Object.freeze(item[key]);}Object.freeze(item);}
 globalThis.AQUARIUM_SPECIES=Object.freeze(species);
+// Two adult sizes and a distinctly smaller juvenile; shared by scene and regressions.
+globalThis.AQUARIUM_SHARK_SCALES=Object.freeze([1,.7,.35]);
 // Sparse accents among the slower residents: 1 / 2 / 2 / 2 / 3 at the five densities.
 const ordinary=[0,5,1,5,2,5,3,5,4,5];
 globalThis.AQUARIUM_FISH_PLAN=Object.freeze(Array.from({length:52},(_,i)=>[2,18,42].includes(i)?7:ordinary[i%ordinary.length]));

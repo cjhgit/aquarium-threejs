@@ -4,8 +4,8 @@
 const T=globalThis.THREE;
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 function seeded(seed){return ()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};}
-function fixture(count=12,seed=11042,sharks=false){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random),plan=AQUARIUM_FISH_PLAN;
-  for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<2?6:plan[(sharks?i-2:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
+function fixture(count=12,seed=11042,sharks=false,environment={},sharkScales=[1,1]){const random=seeded(seed),fish=[],engine=new AquariumMotion(fish,random,environment),plan=AQUARIUM_FISH_PLAN;
+  for(let i=0;i<count;i++){const species=AQUARIUM_SPECIES[sharks&&i<sharkScales.length?6:plan[(sharks?i-sharkScales.length:i)%plan.length]],g=new T.Group();g.userData.swim={phase:{value:0},effort:{value:.6},bend:{value:new T.Vector2()}};engine.register({g,species,kind:species.kind,rounded:species.heritage,size:species.size*(.94+random()*.12)*(sharks?(sharkScales[i]??1):1),phase:random()*6.28,direction:random()>.5?1:-1});}engine.setCount(count);return {fish,engine};
 }
 function speciesFixture(species,count=1,seed=42){const fish=[],engine=new AquariumMotion(fish,seeded(seed));for(let i=0;i<count;i++)engine.register({g:new T.Group(),species,kind:species.kind,rounded:species.heritage,size:species.size,direction:1});engine.setCount(count);return {fish,engine};}
 function position(engine,f,x,y,z,yaw=0){f.g.position.set(x,y,z);f.yaw=yaw;f.pitch=0;f.roll=0;f.speed=f.cruise;f.velocity.set(Math.cos(yaw)*f.speed,0,-Math.sin(yaw)*f.speed);f.home.copy(f.g.position);f.goal.set(x+Math.cos(yaw)*8,y,z-Math.sin(yaw)*8);f.nextSense=0;f.nextGoal=100;f.activity='cruise';f.activityFactor=1;f.activityUntil=100;engine.orient(f);}
@@ -13,6 +13,23 @@ function pellet(x,y,z){return {mesh:{position:new T.Vector3(x,y,z)},speed:.17,li
 function advance(engine,seconds,foods=[],sample=()=>{}){for(let i=0;i<Math.ceil(seconds*60);i++){engine.update(1/60,foods);sample(i);}}
 globalThis.runMotionTests=async function(report=()=>{}){const results=[];
   async function test(name,run){try{const detail=await run();results.push({name,pass:true,detail});}catch(error){results.push({name,pass:false,detail:error.message});}report(results[results.length-1]);await new Promise(r=>setTimeout(r,0));}
+  await test('大中小三条鲨鱼在实际礁湾共游，体型、间距与运动保持正确',()=>{
+    const scales=AQUARIUM_SHARK_SCALES;let minGap=Infinity,minRock=Infinity,minJelly=Infinity,maxStep=0,worstRock=null;
+    for(const [fps,count] of [[25,35],[60,55]]){const scene=new T.Scene(),environment=AQUARIUM_REEF.decorate(scene),garden=AQUARIUM_REEF.makeRockGarden(Array.from({length:4},()=>new T.MeshBasicMaterial()),seeded(11042));environment.obstacles.push(...garden.obstacles);
+      const oldRandom=Math.random;let life;try{Math.random=seeded(11042);life=AQUARIUM_REEF.populate(scene,environment.obstacles);}finally{Math.random=oldRandom;}
+      const turtle=life.residents.find(r=>r.species.id==='sea-turtle');environment.obstacles.push({center:turtle.g.position,radius:1.35});
+      const {engine,fish}=fixture(count,11042,true,environment,scales);assert(engine.predators.length===3,'鲨鱼数量不是三条');
+      const base=AQUARIUM_SPECIES.find(s=>s.predator).size;
+      engine.predators.forEach((f,i)=>assert(f.size>=base*scales[i]*.94&&f.size<=base*scales[i]*1.06,'鲨鱼体型没有按指定比例缩放'));
+      const previous=engine.predators.map(f=>f.model.position.clone());
+      for(let frame=1;frame<=fps*60;frame++){life.update(frame/fps);engine.update(1/fps,[]);
+        engine.predators.forEach((f,i)=>{assert(f.model.position.toArray().every(Number.isFinite),'鲨鱼坐标无效');maxStep=Math.max(maxStep,f.model.position.distanceTo(previous[i]));previous[i].copy(f.model.position);
+          const visible=engine.renderedBounds(f);for(const o of environment.obstacles){if(o.kind==='rock'){const gap=engine.obstacleGap(visible,o);if(gap<minRock){minRock=gap;worstRock={fps,id:f.id,time:frame/fps,size:f.size};}}if(o.kind==='jellyfish')minJelly=Math.min(minJelly,engine.obstacleGap(visible,o));}
+        });minGap=Math.min(minGap,engine.audit().minGap);
+      }
+    }
+    assert(minGap>-.015,`三条鲨鱼与鱼群碰撞重叠：${minGap}`);assert(minRock>-.01,`不同体型鲨鱼穿入礁石：${minRock} ${JSON.stringify(worstRock)}`);assert(minJelly>-.01,`不同体型鲨鱼穿入水母：${minJelly}`);assert(maxStep<.2,`鲨鱼发生位置突跳：${maxStep}`);return {scales,minGap,minRock,minJelly,maxStep};
+  });
   await test('图鉴五项属性完整，鲨鱼最危险、最独处，灯鱼最聚群',()=>{
     for(const species of AQUARIUM_SPECIES)for(const key of ['size','schooling','danger','activity','speed'])assert(Number.isInteger(species.traits[key])&&species.traits[key]>=1&&species.traits[key]<=5,`${species.name} 缺少有效属性 ${key}`);
     const shark=AQUARIUM_SPECIES.find(s=>s.predator),tetra=AQUARIUM_SPECIES.find(s=>s.kind===3),active=AQUARIUM_SPECIES.find(s=>s.id==='tidal-swallow'),quiet=AQUARIUM_SPECIES.find(s=>s.id==='moon-angelfish');

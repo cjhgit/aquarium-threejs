@@ -287,13 +287,13 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
 }
 // The orbiting camera is a live sphere obstacle: fish may swim all around it, but never into the lens.
 environment.obstacles.push({center:camera.position,radius:1.7});
-const motion=new AquariumMotion(fish,random,environment),populationPlan=window.AQUARIUM_FISH_PLAN;
+const motion=new AquariumMotion(fish,random,environment),populationPlan=window.AQUARIUM_FISH_PLAN,sharkScales=window.AQUARIUM_SHARK_SCALES;
 // The cruising turtle is a live obstacle: smaller fish glide around its shell just like the rocks.
 const turtleResident=reefLife.residents.find(r=>r.species.id==='sea-turtle');
 if(turtleResident)environment.obstacles.push({center:turtleResident.g.position,radius:1.35});
-for(let i=0;i<54;i++){const species=speciesCatalog[i<2?6:populationPlan[(i-2)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
+for(let i=0;i<populationPlan.length+sharkScales.length;i++){const species=speciesCatalog[i<sharkScales.length?6:populationPlan[(i-sharkScales.length)%populationPlan.length]],g=createFishModel(species),size=species.size*range(.94,1.06)*(sharkScales[i]??1);g.scale.setScalar(size);scene.add(g);motion.register({g,species,kind:species.kind,rounded:species.heritage,size,phase:range(0,Math.PI*2),direction:random()>.5?1:-1});}
 function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.model.visible=i<n);}
-setCount(34);
+setCount(32+sharkScales.length);
 // Tiny suspended particles and pearl-like bubbles, each in a single draw call.
 function particleTexture(ring=false){let c=document.createElement('canvas');c.width=c.height=64;let g=c.getContext('2d'),gr=g.createRadialGradient(27,24,1,32,32,31);if(ring){gr.addColorStop(0,'rgba(190,240,236,0)');gr.addColorStop(.65,'rgba(180,235,233,.02)');gr.addColorStop(.87,'rgba(180,235,233,.28)');gr.addColorStop(.94,'rgba(218,255,243,.65)');gr.addColorStop(1,'rgba(130,215,225,0)');}else{gr.addColorStop(0,'rgba(211,241,220,.7)');gr.addColorStop(.2,'rgba(201,235,215,.4)');gr.addColorStop(1,'rgba(200,240,230,0)');}g.fillStyle=gr;g.fillRect(0,0,64,64);if(ring){g.fillStyle='#e4fff7';g.beginPath();g.ellipse(22,18,4,2,-.7,0,7);g.fill();}return new T.CanvasTexture(c);}
 const dustGeo=new T.BufferGeometry(),dustArray=new Float32Array(550*3);for(let i=0;i<550;i++){dustArray[i*3]=range(-24,24);dustArray[i*3+1]=range(-4,12);dustArray[i*3+2]=range(-15,12);}dustGeo.setAttribute('position',new T.BufferAttribute(dustArray,3));const dust=new T.Points(dustGeo,new T.PointsMaterial({color:'#b0d8c1',size:.07,map:particleTexture(),transparent:true,opacity:.5,depthWrite:false,blending:T.AdditiveBlending}));scene.add(dust);
