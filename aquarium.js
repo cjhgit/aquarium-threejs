@@ -477,7 +477,7 @@ function initGuide(){if(guideRenderer)return;
   guideRenderer=new T.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true,powerPreference:'low-power'});guideRenderer.setPixelRatio(Math.min(devicePixelRatio,1.5));guideRenderer.outputColorSpace=T.SRGBColorSpace;guideRenderer.toneMapping=T.ACESFilmicToneMapping;guideRenderer.toneMappingExposure=1.12;previewHost.prepend(guideRenderer.domElement);
   guideScene=new T.Scene();guideCamera=new T.PerspectiveCamera(43,1,.1,30);guideCamera.position.set(0,.15,5);guideCamera.lookAt(-.35,0,0);
   guideScene.add(new T.HemisphereLight(0xd4f1e4,0x34484c,2));const key=new T.DirectionalLight(0xffefcf,3.2);key.position.set(-2,5,6);guideScene.add(key);const edge=new T.DirectionalLight(0x79d7e6,1.7);edge.position.set(4,2,-3);guideScene.add(edge);
-  guideModels=guideCatalog.map(species=>{const model=species.resident?reef.createModel(species):createFishModel(species);model.scale.setScalar(species.id==='moon-angelfish'?.92:species.id==='sea-turtle'?1.85:species.id==='manta-ray'?.92:species.resident?1.5:1.7);if(species.resident){model.position.y=species.id==='moon-jelly'?.5:species.id==='sea-turtle'?.48:-.3;model.rotation.x=guideTilt(species);if(species.id==='sea-turtle')model.rotation.y=-.4;}model.visible=false;guideScene.add(model);return model;});
+  guideModels=guideCatalog.map(species=>{const model=species.resident?reef.createModel(species):createFishModel(species);model.scale.setScalar(species.id==='moon-angelfish'?.92:species.id==='sea-turtle'?1.85:species.id==='manta-ray'?.92:species.id==='robot-fish'?1.15:species.resident?1.5:1.7);if(species.resident){model.position.y=species.id==='moon-jelly'?.5:species.id==='sea-turtle'?.48:-.3;model.rotation.x=guideTilt(species);if(species.id==='sea-turtle')model.rotation.y=-.4;}model.visible=false;guideScene.add(model);return model;});
   guideRenderer.setSize(240,128,false);guideCamera.aspect=240/128;guideCamera.updateProjectionMatrix();
   guideCatalog.forEach((species,index)=>{
     guideModels.forEach((model,i)=>model.visible=i===index);guideRenderer.render(guideScene,guideCamera);
@@ -498,7 +498,7 @@ function openGuide(){initGuide();catalog.showModal();$('#field-guide').setAttrib
 $('#field-guide').onclick=openGuide;$('#close-catalog').onclick=()=>catalog.close();
 catalog.addEventListener('click',e=>{if(e.target===catalog)catalog.close();});
 catalog.addEventListener('close',()=>{$('#field-guide').setAttribute('aria-expanded','false');guideDown=null;$('#field-guide').focus({preventScroll:true});});
-function guideTilt(species){return species.id==='ochre-star'||species.id==='pearl-clam'?1:species.id==='sea-turtle'?.55:species.id==='manta-ray'?.6:species.resident?.4:0;}
+function guideTilt(species){if(species.id==='robot-fish')return .15;return species.id==='ochre-star'||species.id==='pearl-clam'?1:species.id==='sea-turtle'?.55:species.id==='manta-ray'?.6:species.resident?.4:0;}
 function renderGuide(dt){if(!guideRenderer||!catalog.open)return;const model=guideModels[selectedSpecies];if(model.userData.swim)model.userData.swim.phase.value=(model.userData.swim.phase.value+dt*4.2)%(Math.PI*40);else reef.animateModel(model,elapsed);model.rotation.set(guideTilt(guideCatalog[selectedSpecies]),guideYaw+Math.sin(elapsed*.2)*.08,guidePitch,'YZX');guideRenderer.render(guideScene,guideCamera);}
 
 let down=null,lastPointer=null;

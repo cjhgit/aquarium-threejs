@@ -269,8 +269,8 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     const shark=fish[0];shark.playTarget=fish[5];engine.setCount(2);engine.update(1/60,[]);assert(!shark.playTarget,'减少数量后仍追逐隐藏的小鱼');return {chases,maxDuration};
   });
   await test('新增居民数量克制，底栖生物贴底，水母与海龟各守水层',()=>{
-    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===11&&AQUARIUM_REEF.species.length===7,'新增居民数量异常');
-    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else if(r.species.id==='manta-ray')assert(p.y>7&&p.y<9,'蝠鲼离开表层');else if(r.species.id==='sea-turtle')assert(p.y>AquariumMotion.floorHeight(p.x,p.z)+.55&&p.y<4.5,'海龟离开中层水域');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
+    const scene=new T.Scene(),life=AQUARIUM_REEF.populate(scene);assert(life.residents.length===12&&AQUARIUM_REEF.species.length===8,'新增居民数量异常');
+    for(let t=0;t<180;t+=.5){life.update(t);for(const r of life.residents){const p=r.g.position;assert(p.toArray().every(Number.isFinite),'居民位置无效');if(r.species.id==='moon-jelly')assert(p.y>2.5&&p.y<5,'水母离开中上层');else if(r.species.id==='manta-ray')assert(p.y>7&&p.y<9,'蝠鲼离开表层');else if(r.species.id==='robot-fish')assert(p.y>2.8&&p.y<5,'机械鱼离开中层');else if(r.species.id==='sea-turtle')assert(p.y>AquariumMotion.floorHeight(p.x,p.z)+.55&&p.y<4.5,'海龟离开中层水域');else assert(p.y-AquariumMotion.floorHeight(p.x,p.z)>=.039&&p.y-AquariumMotion.floorHeight(p.x,p.z)<.3,'底栖生物离开沙地');}}
     return Object.fromEntries(AQUARIUM_REEF.species.map(s=>[s.name,life.residents.filter(r=>r.species===s).length]));
   });
   await test('青蟹时停时走并横向探索，虾不出现在场景中',()=>{
@@ -414,6 +414,23 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
           if(i%(fps*4)===0){const distance=p.distanceTo(windowStart[j]);lowest=Math.min(lowest,distance);minTravel=Math.min(minTravel,distance);minStroke=Math.min(minStroke,stroke[j]);assert(distance>.12,`${fps} 帧鲨鱼 ${j} 在第 ${i/fps} 秒前四秒没有继续游动：${distance}`);assert(stroke[j]>.15,`${fps} 帧鲨鱼 ${j} 摆尾冻结：${stroke[j]}`);windowStart[j].copy(p);stroke[j]=0;}
         }}cases.push({fps,sizeFactor,minWindowTravel:lowest});
     }assert(minGap>=-.001,`持续游动时穿入礁石：${minGap}`);assert(maxAngularAcceleration<4.7,`转向加速度突变：${maxAngularAcceleration}`);return {cases,minTravel,minStroke,minGap,maxStep,maxAcceleration,maxAngularAcceleration,minPhaseStep,maxEffortRate};
+  });
+  await test('机械鱼固定单例、动态避让包络与刚体关节动画',()=>{
+    const obstacles=[],life=AQUARIUM_REEF.populate(new T.Scene(),obstacles),robots=life.residents.filter(r=>r.species.id==='robot-fish');assert(robots.length===1,'机械鱼不是一条');
+    const g=robots[0].g,r=g.userData.robot,own=obstacles.find(o=>o.owner===g);assert(own&&own.center===g.position,'没有跟随机身的避让包络');
+    const geometry=[];g.traverse(o=>{if(o.isMesh){for(const a of Object.values(o.geometry.attributes))assert(a.array.every(Number.isFinite),'机械鱼几何无效');geometry.push([o.geometry.attributes.position,o.geometry.attributes.position.array.slice()]);}});
+    AQUARIUM_ROBOT.animate(g,.37);const angle=r.tip.rotation.y,glow=r.glow.emissiveIntensity;AQUARIUM_ROBOT.animate(g,1);assert(Math.abs(r.tip.rotation.y-angle)>.1,'尾部关节没有摆动');AQUARIUM_ROBOT.animate(g,.37);assert(r.tip.rotation.y===angle&&r.glow.emissiveIntensity===glow,'关节动画不能重复定位');
+    for(const [p,base] of geometry)assert(base.every((v,i)=>v===p.array[i]),'硬质装甲发生柔性形变');
+    life.update(1);const pose=g.position.clone(),tail=r.tail.rotation.y;life.update(1);assert(g.position.equals(pose)&&tail===r.tail.rotation.y,'暂停时仍在运动');
+    const other=AQUARIUM_ROBOT.createModel();AQUARIUM_ROBOT.animate(other,5);assert(other.userData.robot.glow!==r.glow,'图鉴灯光影响场景');return {count:robots.length,meshes:geometry.length};
+  });
+  await test('机械鱼三分钟巡航、跨帧率一致性与连续转向',()=>{
+    const ends=[];let maxStep=0,maxAngle=0;
+    for(const fps of [25,60]){const g=AQUARIUM_ROBOT.createModel();g.position.set(2,3.8,4);g.rotation.y=-.3;
+      const obstacles=[{center:new T.Vector3(-7,1,-2),radii:new T.Vector3(2,2,2)},{kind:'jellyfish',center:new T.Vector3(5.2,4,-3),radii:new T.Vector3(.8,1.5,.8)}],control=AQUARIUM_ROBOT.makeController(g,obstacles);
+      for(let i=0;i<fps*180;i++){const p=g.position.clone(),q=g.quaternion.clone();control.update({dt:1/fps});maxStep=Math.max(maxStep,p.distanceTo(g.position));maxAngle=Math.max(maxAngle,q.angleTo(g.quaternion));assert(g.position.toArray().every(Number.isFinite),'位置无效');assert(Math.abs(g.position.x)<12&&Math.abs(g.position.z)<8&&g.position.y>2.8&&g.position.y<5,'游出巡航水域');}
+      ends.push(g.position.clone());
+    }assert(ends[0].distanceTo(ends[1])<.02,'帧率改变路线');assert(maxStep<.045&&maxAngle<.03,'巡航突跳或突然转向');return {maxStep,maxAngle,frameDifference:ends[0].distanceTo(ends[1])};
   });
   return {passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results};
 };

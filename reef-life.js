@@ -20,7 +20,7 @@ const descriptions=[
   '橄榄绿的盾形背甲上铺着排列整齐的盾片，部分盾片带着琥珀色的日射纹。短颈连接圆钝的头部，细小眼睛嵌在两侧，吻端是自然闭合的喙嘴。头颈和鳍肢布满浅色鳞缝。两片渐尖的长前鳍像翅膀一样同步下压，后鳍负责掌舵，让它在水中安静地滑翔。',
   '宽阔的菱形身体与两侧尖翼连成连续曲面，深灰背部带浅色肩斑，乳白腹部保留深色斑点与五对鳃裂。两片卷曲头鳍位于正前方宽嘴两侧，小眼睛嵌在头侧；背后低矮的背鳍延伸出细长鞭尾。'
 ];
-const species=Object.freeze(entries.map(([id,name,family,subtitle,features,environment,diet,habit],i)=>Object.freeze({id,name,family,subtitle,features:Object.freeze(features),description:descriptions[i],temperament:habit,habitat:Object.freeze({environment,diet,habit}),resident:true,traits:Object.freeze({size:i===6?5:i===5?4:i===4?2:1,schooling:1,danger:id==='moon-jelly'?5:1,activity:i===2||i===3?1:2,speed:i>=5?2:1})})));
+const species=Object.freeze([...entries.map(([id,name,family,subtitle,features,environment,diet,habit],i)=>Object.freeze({id,name,family,subtitle,features:Object.freeze(features),description:descriptions[i],temperament:habit,habitat:Object.freeze({environment,diet,habit}),resident:true,traits:Object.freeze({size:i===6?5:i===5?4:i===4?2:1,schooling:1,danger:id==='moon-jelly'?5:1,activity:i===2||i===3?1:2,speed:i>=5?2:1})})),AQUARIUM_ROBOT.species]);
 const material=(color,extra={})=>new T.MeshStandardMaterial({color,roughness:.57,...extra});
 const red=material('#c6654b'),light=material('#f1be8c'),white=material('#f5e4ca'),dark=material('#182c30'),pink=material('#d397aa',{side:T.DoubleSide}),starMat=material('#e6a064');
 const sphere=new T.SphereGeometry(1,12,8);
@@ -37,6 +37,7 @@ function batchStatic(group,animated=[]){
   }
 }
 function createModel(s){const g=new T.Group();g.userData.species=s.id;g.userData.legs=[];g.userData.tendrils=[];
+  if(s.id==='robot-fish'){const robot=AQUARIUM_ROBOT.createModel(),r=robot.userData.robot;batchStatic(r.tip);batchStatic(r.tail,[r.tip]);for(const f of r.fins)batchStatic(f);batchStatic(robot,[r.tail,...r.fins]);return robot;}
   if(s.id==='tide-crab')return AQUARIUM_CRAB.createModel();
   if(s.id==='manta-ray')return AQUARIUM_MANTA.createModel();
   if(s.id==='sea-turtle')return AQUARIUM_TURTLE.createModel();
@@ -70,13 +71,14 @@ function createModel(s){const g=new T.Group();g.userData.species=s.id;g.userData
   for(const leg of g.userData.legs)batchStatic(leg);batchStatic(g,[...g.userData.legs,...g.userData.tendrils,g.userData.lid,g.userData.bell].filter(Boolean));return g;
 }
 function animateModel(g,t){const u=g.userData;
+  if(u.species==='robot-fish'){if(!u.robot.worldControlled)AQUARIUM_ROBOT.animate(g,t);return;}
   if(u.species==='tide-crab'){AQUARIUM_CRAB.animate(g,t);return;}
   if(u.species==='manta-ray'){if(!u.manta.worldControlled)AQUARIUM_MANTA.animate(g,t);return;}
   if(u.species==='sea-turtle'){if(!u.turtle.worldControlled)AQUARIUM_TURTLE.animate(g,t);return;}
   u.legs.forEach((leg,i)=>{leg.rotation.y=Math.sin(t*4+i*1.8)*.09;});
   u.tendrils.forEach((m,i)=>{m.rotation.x=Math.sin(t*1.3+i)*.055;m.rotation.z=Math.cos(t*.9+i)*.045;});if(u.lid)u.lid.rotation.x=-.13-.10*(1+Math.sin(t*.7));if(u.bell){const pulse=Math.sin(t*2.2);u.bell.scale.set(1+pulse*.09,1-pulse*.13,1+pulse*.09);}}
-function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72],[5,1,5,1.12],[6,-5,-1,1.15]];
-  for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===6?8.1:index===4?3.8:index===5?1.5:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===4?0:index===5?-.9:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);if(s.id==='manta-ray')residents[id].mantaController=AQUARIUM_MANTA.makeController(g,obstacles);if(s.id==='sea-turtle')residents[id].turtleController=AQUARIUM_TURTLE.makeController(g,obstacles,AquariumMotion.floorHeight);}
+function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72],[5,1,5,1.12],[6,-5,-1,1.15],[7,2,4,1.05]];
+  for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===7?3.8:index===6?8.1:index===4?3.8:index===5?1.5:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===7?-.3:index===4?0:index===5?-.9:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);if(s.id==='robot-fish')residents[id].robotController=AQUARIUM_ROBOT.makeController(g,obstacles);if(s.id==='manta-ray')residents[id].mantaController=AQUARIUM_MANTA.makeController(g,obstacles);if(s.id==='sea-turtle')residents[id].turtleController=AQUARIUM_TURTLE.makeController(g,obstacles,AquariumMotion.floorHeight);}
   function jellyPose(r,t){const {g,home,phase}=r,q=t+phase;g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6);g.rotation.z=Math.sin(q*.21)*.08;}
   // The bell and trailing tentacles are separate live envelopes. Their centres
   // follow the rendered resident, including pulse and sway. Other residents yield without pushing the jelly.
@@ -88,6 +90,7 @@ function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[
     obstacles.push(...r.colliders);r.updateColliders();
   }
   for(const r of residents.filter(r=>r.species.id==='manta-ray')){const size=r.g.scale.x;obstacles.push({owner:r.g,center:r.g.position,radii:new T.Vector3(2.75*size,.95*size,2.75*size)});}
+  for(const r of residents.filter(r=>r.species.id==='robot-fish'))obstacles.push({owner:r.g,center:r.g.position,radius:1.75*r.g.scale.x});
   let previous=0;
   const rand=r=>{r.randomState=(r.randomState*1664525+1013904223)>>>0;return r.randomState/4294967296;};
   function crab(r,t,dt){const {g}=r,p=g.position;
@@ -100,9 +103,10 @@ function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[
   }
   return {residents,update(t){const dt=Math.max(0,Math.min(.5,t-previous));previous=t;for(const r of residents){const {g,home,phase,species:s}=r,q=t+phase;
     if(s.id==='tide-crab')crab(r,t,dt);
+    if(s.id==='robot-fish')r.robotController.update({dt,t});
     if(s.id==='manta-ray')r.mantaController.update({dt,t});
     if(s.id==='sea-turtle')r.turtleController.update({dt,t});
-    if(s.id==='moon-jelly'){jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'&&s.id!=='manta-ray'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
+    if(s.id==='moon-jelly'){jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'&&s.id!=='manta-ray'&&s.id!=='robot-fish'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
     animateModel(g,q);
   }}};
 }
