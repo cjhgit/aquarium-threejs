@@ -121,8 +121,8 @@ function makeController(g,obstacles=[],ground){
       const x=-9.5+rand()*19,z=-5.5+rand()*11,y=-.9+rand()*3.6;
       if(y<ground(x,z)+1.15)continue;
       let blocked=false;
-      for(const o of obstacles){if(o.center===g.position)continue;const c=o.center,r=o.radii;
-        const d=r?Math.hypot((x-c.x)/(r.x+1.4),(y-c.y)/(r.y+1.4),(z-c.z)/(r.z+1.4)):Math.hypot(x-c.x,(y-c.y)*.8,z-c.z)/(o.radius+1.4);
+      for(const o of obstacles){if(o.center===g.position)continue;const c=o.center,r=o.radii,padding=o.kind==='jellyfish'?5:1.4;
+        const d=r?Math.hypot((x-c.x)/(r.x+padding),(y-c.y)/(r.y+padding),(z-c.z)/(r.z+padding)):Math.hypot(x-c.x,(y-c.y)*.8,z-c.z)/(o.radius+1.4);
         if(d<1){blocked=true;break;}
       }
       if(!blocked){target.set(x,y,z);break;}
@@ -135,12 +135,12 @@ function makeController(g,obstacles=[],ground){
     let sx=dx,sz=dz;
     // Gentle repulsion from the rock garden and the camera lens, tested ahead of the beak.
     const px=g.position.x+Math.cos(yaw)*speed*1.5,pz=g.position.z-Math.sin(yaw)*speed*1.5;
-    for(const o of obstacles){if(o.center===g.position)continue;const c=o.center,r=o.radii;
-      const d=r?Math.hypot((px-c.x)/(r.x+1.15),(g.position.y-c.y)/(r.y+1.15),(pz-c.z)/(r.z+1.15)):Math.hypot(px-c.x,(g.position.y-c.y)*.8,pz-c.z)/(o.radius+1.15);
+    for(const o of obstacles){if(o.center===g.position)continue;const c=o.center,r=o.radii,padding=o.kind==='jellyfish'?5:1.15;
+      const d=r?Math.hypot((px-c.x)/(r.x+padding),(g.position.y-c.y)/(r.y+padding),(pz-c.z)/(r.z+padding)):Math.hypot(px-c.x,(g.position.y-c.y)*.8,pz-c.z)/(o.radius+1.15);
       if(d>=1)continue;
       let ax=px-c.x,az=pz-c.z;const h=Math.hypot(ax,az);
       if(h<.01){ax=Math.cos(yaw+Math.PI/2);az=-Math.sin(yaw+Math.PI/2);}else{ax/=h;az/=h;}
-      const w=1-d;sx+=ax*w*7;sz+=az*w*7;
+      const w=1-d,force=o.kind==='jellyfish'?24:7;sx+=ax*w*force;sz+=az*w*force;
     }
     yawRate+=(clamp(wrap(Math.atan2(-sz,sx)-yaw)*1.5,-.5,.5)-yawRate)*Math.min(1,dt*2);
     yaw+=yawRate*dt;

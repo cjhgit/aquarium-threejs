@@ -277,26 +277,46 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     assert(maxOutside<.025,`可见伞盖或触须超出碰撞范围：${maxOutside}`);return {jellies:jellies.length,colliders:obstacles.length,maxOutside};
   });
   await test('鲨鱼提前绕开水母，正面接近时稳定选择一侧并减速',()=>{
-    for(const direction of [-1,1]){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0],o={kind:'jellyfish',center:new T.Vector3(0,2,0),radii:new T.Vector3(.75,1,.75),velocity:new T.Vector3()};engine.obstacles=[o];position(engine,f,-direction*10,2,0,direction===1?0:Math.PI);f.steer.copy(f.axis);f.desiredSpeed=f.cruise;assert(engine.obstacleGap(f,o)>1,'提前避让检查起点太近');engine.reefAvoid(f);assert(Math.abs(f.steer.z)>.1,'迎面接近没有侧向绕行');assert(f.desiredSpeed<f.cruise*.95,'接近水母没有减速');}
+    for(const direction of [-1,1]){const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0],o={kind:'jellyfish',center:new T.Vector3(0,2,0),radii:new T.Vector3(.75,1,.75),velocity:new T.Vector3()};engine.obstacles=[o];position(engine,f,-direction*10,2,0,direction===1?0:Math.PI);f.steer.copy(f.axis);f.desiredSpeed=f.cruise;assert(engine.obstacleGap(f,o)>1,'提前避让检查起点太近');engine.avoidPredators(f,1/60);assert(Math.abs(f.steer.z)>.1,'迎面接近没有侧向绕行');assert(f.desiredSpeed<f.cruise*.95,'接近水母没有减速');}
   });
   await test('水母碰撞覆盖鲨鱼长胸鳍与上尾鳍尖端',()=>{
     const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];position(engine,f,0,2,0);f.effort=0;engine.updateSpineBounds(f);engine.syncModel(f,0,true);const visible=engine.renderedBounds(f);
     for(const [x,y,z] of [[-.49,-.145,-.68],[-.49,-.145,.68],[-1.96,.54,0]]){const p=new T.Vector3(x,y,z).multiplyScalar(f.size).add(f.model.position),o={kind:'jellyfish',center:p,radii:new T.Vector3(.03,.03,.03)};assert(engine.obstacleGap(visible,o)<0,'水母可从胸鳍或尾鳍尖端穿过');}
   });
   await test('25 / 60 帧迎面接近漂浮水母，可见鲨鱼和水母始终分离',()=>{
-    let minGap=Infinity,maxJellyStep=0,maxPressure=0;
+    let minGap=Infinity,maxJellyStep=0;
     for(const fps of [25,60])for(const direction of [-1,1]){const obstacles=[],life=AQUARIUM_REEF.populate(new T.Scene(),obstacles),r=life.residents.find(r=>r.species.id==='moon-jelly');obstacles.splice(0,obstacles.length,...r.colliders);r.home.set(0,2,-.6);r.phase=0;life.update(0);
       const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];engine.obstacles=obstacles;position(engine,f,-direction*11,2,0,direction===1?0:Math.PI);f.goal.set(direction*14,2,0);f.nextGoal=1000;f.nextPlay=1000;f.activityUntil=1000;engine.syncModel(f,0,true);let previous=r.g.position.clone();
-      for(let i=1;i<=fps*24;i++){life.update(i/fps);engine.update(1/fps,[]);const visible=engine.renderedBounds(f);for(const o of obstacles)minGap=Math.min(minGap,engine.obstacleGap(visible,o));maxJellyStep=Math.max(maxJellyStep,r.g.position.distanceTo(previous));maxPressure=Math.max(maxPressure,r.displacement.length());previous.copy(r.g.position);assert(r.g.position.toArray().every(Number.isFinite),'水母挤开后坐标无效');}
+      for(let i=1;i<=fps*24;i++){life.update(i/fps);engine.update(1/fps,[]);const visible=engine.renderedBounds(f);for(const o of obstacles)minGap=Math.min(minGap,engine.obstacleGap(visible,o));maxJellyStep=Math.max(maxJellyStep,r.g.position.distanceTo(previous));previous.copy(r.g.position);assert(r.g.position.toArray().every(Number.isFinite),'水母漂浮坐标无效');}
     }
-    assert(minGap>-.01,`可见鲨鱼与水母穿模：${minGap}，最大水母位移 ${maxJellyStep}，偏移 ${maxPressure}`);assert(maxJellyStep<.4,'水母单帧位移超过快速摆尾的接触上限');return {minGap,maxJellyStep,maxPressure};
+    assert(minGap>-.01,`可见鲨鱼与水母穿模：${minGap}，最大水母位移 ${maxJellyStep}`);assert(maxJellyStep<.4,'水母单帧位移超过快速摆尾的接触上限');return {minGap,maxJellyStep};
   });
-  await test('水母漂向鲨鱼侧腹和弯曲尾部时被轻推，碰撞以可见模型为准',()=>{
-    let minGap=Infinity,maxPush=0;
-    for(const x of [-6,-2,2]){const obstacles=[],life=AQUARIUM_REEF.populate(new T.Scene(),obstacles),r=life.residents.find(r=>r.species.id==='moon-jelly');obstacles.splice(0,obstacles.length,...r.colliders);const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[6]),f=fish[0];engine.obstacles=obstacles;position(engine,f,30,2,0);f.bendYaw=.32;f.bendPitch=.1;engine.updateSpineBounds(f);f.model.position.set(0,2,0);f.model.quaternion.identity();r.g.rotation.set(0,0,0);r.g.position.set(x,2,5);r.updateColliders();let pushes=0;
-      for(let i=0;i<300;i++){r.displace(0,-.015);const previous=r.g.position.clone();engine.resolveResidentContacts();const shift=r.g.position.distanceTo(previous);pushes+=shift>.001?1:0;maxPush=Math.max(maxPush,shift);const visible=engine.renderedBounds(f);for(const o of obstacles)minGap=Math.min(minGap,engine.obstacleGap(visible,o));}
-      assert(pushes>0,'只检查模拟坐标，漏掉可见身侧或尾部');assert(f.model.position.distanceTo(new T.Vector3(0,2,0))<1e-9,'挤开水母时移动了鲨鱼');
-    }assert(minGap>-.01,'水母穿过可见鲨鱼侧腹或尾部');assert(maxPush<.25,`水母接触分离产生过大位移：${maxPush}`);return {minGap,maxPush};
+  await test('水母危险最高，全部鱼种提前远离并放弃危险区鱼饵',()=>{
+    assert(AQUARIUM_REEF.species.find(s=>s.id==='moon-jelly').traits.danger===5,'水母危险等级不是最高');
+    for(const species of AQUARIUM_SPECIES){const {engine,fish}=speciesFixture(species),f=fish[0];
+      const o={kind:'jellyfish',danger:5,center:new T.Vector3(0,3,0),radii:new T.Vector3(.9,1.3,.9),velocity:new T.Vector3()};engine.obstacles=[o];
+      position(engine,f,-(f.predator?10:5),3,0);f.steer.copy(f.axis);f.desiredSpeed=f.cruise;engine.avoidPredators(f,1/60);
+      assert(f.steer.x<0&&Math.abs(f.steer.z)>.1,`${species.name}没有主动绕开水母`);
+      const food=pellet(0,3,0);assert(engine.foodScore(f,food)===Infinity,`${species.name}仍追逐水母旁的鱼饵`);
+    }
+  });
+  await test('各档密度出生远离水母，水母不受鱼群接触推移',()=>{
+    for(const count of [14,26,34,42,54]){const obstacles=[],life=AQUARIUM_REEF.populate(new T.Scene(),obstacles),{engine,fish}=fixture(54,11042,true);engine.obstacles=obstacles;engine.setCount(0);engine.setCount(count);
+      for(const f of fish.slice(0,count))for(const o of obstacles)assert(engine.obstacleGap(f,o)>2,`${count}尾时${f.species.name}出生靠近水母`);
+      const jellies=life.residents.filter(r=>r.species.id==='moon-jelly'),before=jellies.map(r=>r.g.position.clone());
+      for(const f of engine.predators){position(engine,f,...jellies[0].g.position.toArray());engine.syncModel(f,0,true);}
+      engine.update(1/60,[]);jellies.forEach((r,i)=>assert(r.g.position.equals(before[i]),'鱼群碰撞仍然移动水母'));
+      life.update(10);const natural=jellies.map(r=>r.g.position.clone());life.update(10);jellies.forEach((r,i)=>assert(r.g.position.equals(natural[i]),'同一漂浮时间的位置受碰撞影响'));
+    }
+  });
+  await test('海龟初始远离水母，25 / 60 帧巡游主动绕开危险区域',()=>{
+    let minClearance=Infinity;
+    for(const fps of [25,60]){const oldRandom=Math.random;let life;try{Math.random=seeded(11042);life=AQUARIUM_REEF.populate(new T.Scene());}finally{Math.random=oldRandom;}
+      const turtle=life.residents.find(r=>r.species.id==='sea-turtle'),jellies=life.residents.filter(r=>r.species.id==='moon-jelly');
+      for(const r of jellies)assert(turtle.g.position.distanceTo(r.g.position)>7,'海龟初始靠近水母');
+      for(let i=0;i<fps*120;i++){life.update(i/fps);for(const r of jellies)for(const o of r.colliders){const d=turtle.g.position.clone().sub(o.center);minClearance=Math.min(minClearance,Math.hypot(d.x/(o.radii.x+1.5),d.y/(o.radii.y+1.5),d.z/(o.radii.z+1.5)));}}
+    }
+    assert(minClearance>1,`海龟进入水母身体范围：${minClearance}`);return {minClearance};
   });
   await test('真实礁湾中两条鲨鱼与水母长时间共游，追玩与摆尾不穿模',()=>{
     let minGap=Infinity,maxStep=0;

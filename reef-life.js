@@ -18,7 +18,7 @@ const descriptions=[
   '淡蓝透明的伞盖下，四瓣淡紫色口腕与细长触手一起舒展。伞缘轻轻收拢后再展开，像水中的一盏月光灯。',
   '橄榄绿的盾形背甲上铺着排列整齐的盾片，部分盾片带着琥珀色的日射纹。短颈连接圆钝的头部，细小眼睛嵌在两侧，吻端是自然闭合的喙嘴。头颈和鳍肢布满浅色鳞缝。两片渐尖的长前鳍像翅膀一样同步下压，后鳍负责掌舵，让它在水中安静地滑翔。'
 ];
-const species=Object.freeze(entries.map(([id,name,family,subtitle,features,environment,diet,habit],i)=>Object.freeze({id,name,family,subtitle,features:Object.freeze(features),description:descriptions[i],temperament:habit,habitat:Object.freeze({environment,diet,habit}),resident:true,traits:Object.freeze({size:i===5?4:i===4?2:1,schooling:1,danger:1,activity:i===2||i===3?1:2,speed:i===5?2:1})})));
+const species=Object.freeze(entries.map(([id,name,family,subtitle,features,environment,diet,habit],i)=>Object.freeze({id,name,family,subtitle,features:Object.freeze(features),description:descriptions[i],temperament:habit,habitat:Object.freeze({environment,diet,habit}),resident:true,traits:Object.freeze({size:i===5?4:i===4?2:1,schooling:1,danger:id==='moon-jelly'?5:1,activity:i===2||i===3?1:2,speed:i===5?2:1})})));
 const material=(color,extra={})=>new T.MeshStandardMaterial({color,roughness:.57,...extra});
 const red=material('#c6654b'),light=material('#f1be8c'),white=material('#f5e4ca'),dark=material('#182c30'),pink=material('#d397aa',{side:T.DoubleSide}),starMat=material('#e6a064');
 const sphere=new T.SphereGeometry(1,12,8);
@@ -71,18 +71,17 @@ function animateModel(g,t){const u=g.userData;
   if(u.species==='sea-turtle'){if(!u.turtle.worldControlled)AQUARIUM_TURTLE.animate(g,t);return;}
   u.legs.forEach((leg,i)=>{leg.rotation.y=Math.sin(t*4+i*1.8)*.09;});
   u.tendrils.forEach((m,i)=>{m.rotation.x=Math.sin(t*1.3+i)*.055;m.rotation.z=Math.cos(t*.9+i)*.045;});if(u.lid)u.lid.rotation.x=-.13-.10*(1+Math.sin(t*.7));if(u.bell){const pulse=Math.sin(t*2.2);u.bell.scale.set(1+pulse*.09,1-pulse*.13,1+pulse*.09);}}
-function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72],[5,3,.5,1.12]];
+function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[0,7,3.8,.82],[2,-2.2,5.2,.95],[2,3.8,4.5,.75],[2,-11.9,4.7,.85],[3,-8.5,4.4,.85],[3,5.5,3.6,.67],[4,-3.8,-2.2,.9],[4,5.2,-3,.72],[5,1,5,1.12]];
   for(const [index,x,z,size] of layout){const s=species[index],g=createModel(s);g.scale.setScalar(size);const y=index===4?3.8:index===5?1.5:AquariumMotion.floorHeight(x,z)+.04;g.position.set(x,y,z);g.rotation.y=index===4?0:index===5?-.9:x*.37;scene.add(g);const id=residents.length;residents.push({g,species:s,home:new T.Vector3(x,y,z),phase:id*1.79,randomState:11042+id*733,mode:'rest',until:id?3:.8,speed:0,target:new T.Vector3(x,y,z),direction:1});g.userData.walkSpeed=0;if(s.id==='tide-crab')residents[id].crabController=AQUARIUM_CRAB.makeController(g,AquariumMotion.floorHeight);if(s.id==='sea-turtle')residents[id].turtleController=AQUARIUM_TURTLE.makeController(g,obstacles,AquariumMotion.floorHeight);}
-  function jellyPose(r,t){const {g,home,phase}=r,q=t+phase;g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6).add(r.displacement);g.rotation.z=Math.sin(q*.21)*.08;}
+  function jellyPose(r,t){const {g,home,phase}=r,q=t+phase;g.position.set(home.x+Math.sin(q*.12)*1.1,home.y+Math.sin(q*.3)*.8,home.z+Math.cos(q*.16)*.6);g.rotation.z=Math.sin(q*.21)*.08;}
   // The bell and trailing tentacles are separate live envelopes. Their centres
-  // follow the rendered resident, including pulse, sway and contact displacement.
+  // follow the rendered resident, including pulse and sway. Other residents yield without pushing the jelly.
   for(const r of residents.filter(r=>r.species.id==='moon-jelly')){
-    r.displacement=new T.Vector3();r.driftVelocity=new T.Vector3();jellyPose(r,0);r.previousPosition=r.g.position.clone();
+    r.driftVelocity=new T.Vector3();jellyPose(r,0);r.previousPosition=r.g.position.clone();
     const size=r.g.scale.x;
-    r.colliders=[[.18,.96,.74],[-.75,.90,1.4]].map(([y,width,height])=>({kind:'jellyfish',owner:r,center:new T.Vector3(),radii:new T.Vector3(width*size,height*size,width*size),velocity:r.driftVelocity,localCenter:new T.Vector3(0,y*size,0)}));
+    r.colliders=[[.18,.96,.74],[-.75,.90,1.4]].map(([y,width,height])=>({kind:'jellyfish',danger:r.species.traits.danger,owner:r,center:new T.Vector3(),radii:new T.Vector3(width*size,height*size,width*size),velocity:r.driftVelocity,localCenter:new T.Vector3(0,y*size,0)}));
     r.updateColliders=()=>{for(const o of r.colliders)o.center.copy(o.localCenter).applyQuaternion(r.g.quaternion).add(r.g.position);};
-    r.displace=(x,z,y=0)=>{r.displacement.x+=x;r.displacement.y+=y;r.displacement.z+=z;r.g.position.x+=x;r.g.position.y+=y;r.g.position.z+=z;r.previousPosition.x+=x;r.previousPosition.y+=y;r.previousPosition.z+=z;r.updateColliders();};
-    for(const o of r.colliders){o.displace=r.displace;obstacles.push(o);}r.updateColliders();
+    obstacles.push(...r.colliders);r.updateColliders();
   }
   let previous=0;
   const rand=r=>{r.randomState=(r.randomState*1664525+1013904223)>>>0;return r.randomState/4294967296;};
@@ -97,7 +96,7 @@ function populate(scene,obstacles=[]){const residents=[],layout=[[0,-5.4,4,.9],[
   return {residents,update(t){const dt=Math.max(0,Math.min(.5,t-previous));previous=t;for(const r of residents){const {g,home,phase,species:s}=r,q=t+phase;
     if(s.id==='tide-crab')crab(r,t,dt);
     if(s.id==='sea-turtle')r.turtleController.update({dt,t});
-    if(s.id==='moon-jelly'){const offset=r.displacement.length(),recovery=Math.min(offset*(1-Math.exp(-dt*.22)),dt*.35);if(offset>0)r.displacement.multiplyScalar(1-recovery/offset);jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
+    if(s.id==='moon-jelly'){jellyPose(r,t);r.driftVelocity.copy(g.position).sub(r.previousPosition).multiplyScalar(dt>0?1/dt:0);r.previousPosition.copy(g.position);r.updateColliders();}else if(s.id!=='sea-turtle'){if(s.id==='ochre-star')g.position.x=home.x+Math.sin(q*.025)*.06;g.position.y=AquariumMotion.floorHeight(g.position.x,g.position.z)+.04;}
     animateModel(g,q);
   }}};
 }
