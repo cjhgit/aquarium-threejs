@@ -328,8 +328,8 @@ let themeTarget=null;const colorTemp=new T.Color();setTheme('day');
 function setPaused(){paused=!paused;$('#pause').setAttribute('aria-pressed',paused);$('#pause').setAttribute('aria-label',paused?'继续动画':'暂停动画');$('#pause svg').innerHTML=paused?'<path d="m8 4 12 8-12 8z"/>':'<path d="M8 5v14M16 5v14"/>';}
 $('#pause').onclick=setPaused;
 $('#theme').onclick=()=>{const themes=['day','sunset','night'];setTheme(themes[(themes.indexOf(theme)+1)%themes.length]);};
-$('#density').onclick=()=>{const counts=[14,26,34,42,54];setCount(counts[(counts.indexOf(visibleCount)+1)%counts.length]);};
-$('#quality').onclick=()=>{quality=quality==='low'?'auto':'low';pixelScale=quality==='low'?1:Math.min(devicePixelRatio,maxDpr);renderer.setPixelRatio(pixelScale);$('#quality').setAttribute('aria-pressed',quality==='low');};
+let toastTimer=0;function showToast(text){const t=$('#toast');t.textContent=text;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1800);}
+$('#quality').onclick=()=>{quality=quality==='low'?'auto':'low';pixelScale=quality==='low'?1:Math.min(devicePixelRatio,maxDpr);renderer.setPixelRatio(pixelScale);$('#quality').setAttribute('aria-pressed',quality==='low');showToast(quality==='low'?'省电画质已开启':'已恢复高清画质');};
 async function fullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){/* Fullscreen may be unavailable in an embedded browser. */}}
 $('#fullscreen').onclick=fullscreen;
 // The guide uses the same model factory and cached geometry/materials as the actual residents.
