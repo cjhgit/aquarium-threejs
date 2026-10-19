@@ -280,7 +280,6 @@ function createFishModel(species){const index=speciesCatalog.indexOf(species),h=
     if(species.id==='moon-angelfish'){const curve=new T.CatmullRomCurve3([[.27,-.6,side*.1],[.13,-1.3,side*.15],[-.25,-1.85,side*.18]].map(p=>new T.Vector3(...p)));g.add(new T.Mesh(new T.TubeGeometry(curve,18,.009,4,false),eyeMat));}
   }
   if(species.predator)addSharkMouth(g,species);
-  else {const mouth=new T.Mesh(new T.TorusGeometry(.028,.009,5,12),gillMaterials[index]);mouth.rotation.y=Math.PI/2;mouth.position.set(1.014,-.012,0);g.add(mouth);}
   mergeDetails(g);
   // Bake detail transforms into fish-local space before applying the same spine.
   g.traverse(part=>{if(!part.geometry||part.userData.swimmingSurface)return;part.updateMatrix();const geometry=part.geometry.clone();geometry.applyMatrix4(part.matrix);part.geometry=geometry;part.position.set(0,0,0);part.rotation.set(0,0,0);part.scale.set(1,1,1);const base=part.material,compile=base.onBeforeCompile;part.material=base.clone();part.material.onBeforeCompile=shader=>{compile(shader);attachSpine(shader,swim);};part.material.customProgramCacheKey=()=>base.customProgramCacheKey()+'-spine';});
