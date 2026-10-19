@@ -11,17 +11,17 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,maxDpr)); renderer.setSize(inne
 renderer.outputColorSpace=T.SRGBColorSpace; renderer.toneMapping=T.ACESFilmicToneMapping; renderer.toneMappingExposure=1.2;
 $('#aquarium').appendChild(renderer.domElement);
 const scene=new T.Scene(); scene.background=new T.Color('#073542'); scene.fog=new T.FogExp2('#073542',.024);
-const camera=new T.PerspectiveCamera(43,innerWidth/innerHeight,.1,100); camera.position.set(0,2.5,26);
+const camera=new T.PerspectiveCamera(43,innerWidth/innerHeight,.1,220); camera.position.set(0,2.5,26);
 const ambient=new T.HemisphereLight(0xb8f2e5,0x344e4b,2.3);scene.add(ambient);
 const sun=new T.DirectionalLight(0xffefd1,3.4); sun.position.set(-6,14,8);scene.add(sun);
 const rim=new T.DirectionalLight(0x4dd8e5,2.3);rim.position.set(6,4,-8);scene.add(rim);
 let seed=11042;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296},range=(a,b)=>a+(b-a)*random();
 const clock=new T.Clock(), time={value:0}, fish=[],bubbles=[],foods=[];
-let elapsed=0,paused=false,flow=.8,visibleCount=32,theme='day',quality='auto',pixelScale=Math.min(devicePixelRatio,maxDpr);
+let elapsed=0,paused=false,flow=.8,visibleCount=32,theme='classic',quality='auto',pixelScale=Math.min(devicePixelRatio,maxDpr);
 const v1=new T.Vector3();
 const state={yaw:0,pitch:0,zoom:26};
 // The seabed is a single displaced mesh. Its caustics and grain are analytical shaders.
-const sandGeo=new T.PlaneGeometry(90,70,100,70);sandGeo.rotateX(-Math.PI/2);
+const sandGeo=new T.PlaneGeometry(400,400,200,200);sandGeo.rotateX(-Math.PI/2);
 const sp=sandGeo.attributes.position;for(let i=0;i<sp.count;i++){let x=sp.getX(i),z=sp.getZ(i);sp.setY(i,AquariumMotion.floorHeight(x,z));}sandGeo.computeVertexNormals();
 const sandMat=new T.MeshStandardMaterial({color:'#b3b49a',roughness:.94});
 sandMat.onBeforeCompile=s=>{s.uniforms.uTime=time;s.vertexShader='varying vec3 vWorld;\n'+s.vertexShader.replace('#include <worldpos_vertex>','#include <worldpos_vertex>\nvWorld=(modelMatrix*vec4(transformed,1.)).xyz;');s.fragmentShader='uniform float uTime; varying vec3 vWorld;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
@@ -296,13 +296,90 @@ function setCount(n){visibleCount=n;motion.setCount(n);fish.forEach((f,i)=>f.mod
 setCount(32+sharkScales.length);
 // Tiny suspended particles and pearl-like bubbles, each in a single draw call.
 function particleTexture(ring=false){let c=document.createElement('canvas');c.width=c.height=64;let g=c.getContext('2d'),gr=g.createRadialGradient(27,24,1,32,32,31);if(ring){gr.addColorStop(0,'rgba(190,240,236,0)');gr.addColorStop(.65,'rgba(180,235,233,.02)');gr.addColorStop(.87,'rgba(180,235,233,.28)');gr.addColorStop(.94,'rgba(218,255,243,.65)');gr.addColorStop(1,'rgba(130,215,225,0)');}else{gr.addColorStop(0,'rgba(211,241,220,.7)');gr.addColorStop(.2,'rgba(201,235,215,.4)');gr.addColorStop(1,'rgba(200,240,230,0)');}g.fillStyle=gr;g.fillRect(0,0,64,64);if(ring){g.fillStyle='#e4fff7';g.beginPath();g.ellipse(22,18,4,2,-.7,0,7);g.fill();}return new T.CanvasTexture(c);}
-const dustGeo=new T.BufferGeometry(),dustArray=new Float32Array(550*3);for(let i=0;i<550;i++){dustArray[i*3]=range(-24,24);dustArray[i*3+1]=range(-4,12);dustArray[i*3+2]=range(-15,12);}dustGeo.setAttribute('position',new T.BufferAttribute(dustArray,3));const dust=new T.Points(dustGeo,new T.PointsMaterial({color:'#b0d8c1',size:.07,map:particleTexture(),transparent:true,opacity:.5,depthWrite:false,blending:T.AdditiveBlending}));scene.add(dust);
+const dustGeo=new T.BufferGeometry(),dustArray=new Float32Array(550*3);for(let i=0;i<550;i++){dustArray[i*3]=range(-24,24);dustArray[i*3+1]=range(-4,12);dustArray[i*3+2]=range(-15,12);}dustGeo.setAttribute('position',new T.BufferAttribute(dustArray,3));const dust=new T.Points(dustGeo,new T.PointsMaterial({color:'#b0d8c1',size:.07,map:particleTexture(),transparent:true,opacity:.22,depthWrite:false,blending:T.AdditiveBlending}));scene.add(dust);
 const bubGeo=new T.BufferGeometry(),bubArray=new Float32Array(85*3);for(let i=0;i<85;i++){let b={x:(i%3===0?-10:10)+range(-.7,.7),y:range(-4.5,10),z:range(-3,1),speed:range(.3,.9),phase:range(0,6)};bubbles.push(b);}bubGeo.setAttribute('position',new T.BufferAttribute(bubArray,3));const bubblePoints=new T.Points(bubGeo,new T.PointsMaterial({map:particleTexture(true),size:.15,transparent:true,opacity:.5,depthWrite:false,color:'#bdede0'}));scene.add(bubblePoints);
 // Broad, feathered light shafts. A cheap transparent pass instead of post-processing.
 const rayMat=new T.ShaderMaterial({uniforms:{uTime:time,uColor:{value:new T.Color('#82cabc')}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'uniform float uTime;uniform vec3 uColor;varying vec2 vUv;void main(){float edge=pow(sin(vUv.x*3.14159),2.);float fade=pow(vUv.y,1.6)*(1.-smoothstep(.87,1.,vUv.y));float pulse=.7+.3*sin(uTime*.25+vUv.x*8.);gl_FragColor=vec4(uColor,edge*fade*pulse*.085);}',transparent:true,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide});
 for(let i=0;i<7;i++){let m=new T.Mesh(new T.PlaneGeometry(range(1,3),21),rayMat);m.position.set(-10+i*4,4,-7-i%3);m.rotation.z=-.27;scene.add(m);}
-// A subtle animated surface overhead.
-const surface=new T.Mesh(new T.PlaneGeometry(85,65),new T.ShaderMaterial({uniforms:{uTime:time},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'uniform float uTime;varying vec2 vUv;void main(){float v=sin(vUv.x*120.+sin(vUv.y*90.+uTime*.3)*2.+uTime*.5)*sin(vUv.y*100.-uTime*.3);gl_FragColor=vec4(.35,.7,.66,.04+pow(abs(v),8.)*.11);}',transparent:true,depthWrite:false,side:T.DoubleSide}));surface.rotation.x=Math.PI/2;surface.position.y=10;scene.add(surface);
+// Clear, sheltered shallows: a small swell gently refracts blue sky and faint clouds.
+// No painted wave bands, bright flecks or sharp total-reflection boundary.
+const waterWaves=`
+  uniform float uTime;
+  vec3 waterField(vec2 p){
+    vec3 field=vec3(0.);
+    vec2 d=vec2(.28,.96);
+    float phase=dot(p,d)*.42-uTime*.40;
+    field+=vec3(.065*sin(phase),d*(.065*.42*cos(phase)));
+    d=vec2(-.6,.8);
+    phase=dot(p,d)*.68-uTime*.56+1.7;
+    field+=vec3(.025*sin(phase),d*(.025*.68*cos(phase)));
+    return field;
+  }
+`;
+const surfaceGeo=new T.PlaneGeometry(180,150,120,100);surfaceGeo.rotateX(-Math.PI/2);
+const surfaceMat=new T.ShaderMaterial({
+  uniforms:{uTime:time,uSkyTop:{value:new T.Color('#275969')},uSkyHorizon:{value:new T.Color('#63918c')},uSunColor:{value:sun.color},uSunPower:{value:sun.intensity},uFogColor:{value:scene.fog.color}},
+  vertexShader:waterWaves+`
+    varying vec3 vWaterPosition;
+    void main(){
+      vec3 p=position;p.y+=waterField(p.xz).x;
+      vWaterPosition=(modelMatrix*vec4(p,1.)).xyz;
+      gl_Position=projectionMatrix*viewMatrix*vec4(vWaterPosition,1.);
+    }`,
+  fragmentShader:waterWaves+`
+    uniform vec3 uSkyTop;
+    uniform vec3 uSkyHorizon;
+    uniform vec3 uSunColor;
+    uniform float uSunPower;
+    uniform vec3 uFogColor;
+    varying vec3 vWaterPosition;
+    float hash(vec2 p){
+      vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);
+      return fract((q.x+q.y)*q.z);
+    }
+    float noise(vec2 p){
+      vec2 cell=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+      return mix(mix(hash(cell),hash(cell+vec2(1.,0.)),f.x),
+                 mix(hash(cell+vec2(0.,1.)),hash(cell+vec2(1.)),f.x),f.y);
+    }
+    void main(){
+      vec3 field=waterField(vWaterPosition.xz);
+      vec3 normal=normalize(vec3(-field.y,1.,-field.z));
+      vec3 view=normalize(cameraPosition-vWaterPosition);
+      float facing=abs(dot(normal,view));
+      // A soft view through the water, warped only slightly by the gentle swell.
+      vec3 skyDirection=normalize(vec3(-view.x*.75,abs(view.y)+.20,-view.z*.75)
+        +vec3(field.y*.8,0.,field.z*.8));
+      vec2 skyUV=skyDirection.xz/(skyDirection.y+.45);
+      float cloudNoise=noise(skyUV*3.+vec2(uTime*.008,4.))*.7
+        +noise(skyUV*6.+vec2(uTime*.010,7.))*.3;
+      vec2 cloudUV=skyUV-vec2(-.28+uTime*.001,-.88);
+      vec2 cloudShape=cloudUV*vec2(4.,18.);
+      float cloudBody=exp(-dot(cloudShape,cloudShape));
+      cloudShape=(cloudUV-vec2(.14,-.015))*vec2(6.,24.);
+      cloudBody=max(cloudBody,exp(-dot(cloudShape,cloudShape))*.8);
+      float clouds=clamp(smoothstep(.53,.79,cloudNoise)*.35+cloudBody*.85,0.,1.);
+      float daylight=clamp(uSunPower/3.4,0.,1.);
+      vec3 sky=mix(uSkyHorizon,uSkyTop,smoothstep(.12,.85,skyDirection.y));
+      // Clouds stay faint and blue-tinted rather than forming white surface marks.
+      sky=mix(sky,mix(uSkyHorizon,uSunColor,.20),clouds*.45*daylight);
+      float light=pow(max(dot(skyDirection,normalize(vec3(-.35,.85,-.3))),0.),16.);
+      sky+=uSunColor*light*.065*daylight;
+      vec3 color=mix(uFogColor,sky,.78);
+      float distanceToCamera=length(cameraPosition-vWaterPosition);
+      float distanceFade=1.-exp(-distanceToCamera*distanceToCamera*.00010);
+      color=mix(color,uFogColor,distanceFade);
+      float horizon=smoothstep(.025,.28,facing);
+      float edgeDistance=min(90.-abs(vWaterPosition.x),75.-abs(vWaterPosition.z));
+      float edgeFade=smoothstep(0.,18.,edgeDistance);
+      gl_FragColor=vec4(color,(.58+.12*facing)*horizon*edgeFade);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  transparent:true,depthWrite:false,side:T.DoubleSide
+});
+const surface=new T.Mesh(surfaceGeo,surfaceMat);surface.position.y=10;
+surfaceGeo.computeBoundingSphere();surfaceGeo.boundingSphere.radius+=.10;scene.add(surface);
 const foodGeo=new T.SphereGeometry(.05,6,5),foodMat=new T.MeshStandardMaterial({color:'#e6bd7b',emissive:'#d29b42',emissiveIntensity:.5,roughness:.7});
 const feedRay=new T.Raycaster(),feedPlane=new T.Plane(),feedNormal=new T.Vector3(),feedAnchor=new T.Vector3(),feedPoint=new T.Vector3();
 let feedBatch=0;
@@ -322,11 +399,23 @@ function addFood(clientX,clientY){
     scene.add(m);foods.push({mesh:m,meal,batch,life:0,speed:range(.13,.22)});
   }
 }
-function setTheme(value){theme=value;const themes={day:{bg:'#073542',sky:0xb8f2e5,sun:0xffefd1,power:3.4,exposure:1.2,ray:'#82cabc'},night:{bg:'#07172e',sky:0x527fc4,sun:0x9cbcff,power:1.1,exposure:.95,ray:'#557dcc'},sunset:{bg:'#233f43',sky:0xa6c3b4,sun:0xffbd78,power:3.2,exposure:1.25,ray:'#edba7d'}};themeTarget=themes[value];}
-let themeTarget=null;const colorTemp=new T.Color();setTheme('day');
+// Keep the clear-water look as its own preset; the original darker palette is default.
+const themes={
+  classic:{name:'幽蓝',bg:'#073542',sky:0xb8f2e5,ground:0x344e4b,sand:'#b3b49a',sun:0xffefd1,power:3.4,exposure:1.2,ray:'#82cabc',fog:.024,skyTop:'#275969',skyHorizon:'#63918c'},
+  day:{name:'清澈日光',bg:'#187eb4',sky:0xe1f4ff,ground:0x657f8b,sand:'#cfccb0',sun:0xfff4de,power:3.4,exposure:1.2,ray:'#a3dfff',fog:.010,skyTop:'#3799e8',skyHorizon:'#b1e1f7'},
+  sunset:{name:'落日',bg:'#233f43',sky:0xa6c3b4,ground:0x657f8b,sand:'#cfccb0',sun:0xffbd78,power:3.2,exposure:1.25,ray:'#edba7d',fog:.014,skyTop:'#749dc8',skyHorizon:'#efd0af'},
+  night:{name:'夜色',bg:'#07172e',sky:0x527fc4,ground:0x657f8b,sand:'#cfccb0',sun:0x9cbcff,power:1.1,exposure:.95,ray:'#557dcc',fog:.022,skyTop:'#101e40',skyHorizon:'#29466e'}
+};
+const themeOrder=['classic','day','sunset','night'];
+let themeTarget=null;const colorTemp=new T.Color();
+function setTheme(value){
+  theme=value;themeTarget=themes[value];
+  $('#theme').setAttribute('aria-label',`切换光照氛围，当前：${themeTarget.name}`);
+}
+setTheme('classic');
 function setPaused(){paused=!paused;$('#pause').setAttribute('aria-pressed',paused);$('#pause').setAttribute('aria-label',paused?'继续动画':'暂停动画');$('#pause svg').innerHTML=paused?'<path d="m8 4 12 8-12 8z"/>':'<path d="M8 5v14M16 5v14"/>';}
 $('#pause').onclick=setPaused;
-$('#theme').onclick=()=>{const themes=['day','sunset','night'];setTheme(themes[(themes.indexOf(theme)+1)%themes.length]);};
+$('#theme').onclick=()=>setTheme(themeOrder[(themeOrder.indexOf(theme)+1)%themeOrder.length]);
 let toastTimer=0;function showToast(text){const t=$('#toast');t.textContent=text;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1800);}
 $('#quality').onclick=()=>{quality=quality==='low'?'auto':'low';pixelScale=quality==='low'?1:Math.min(devicePixelRatio,maxDpr);renderer.setPixelRatio(pixelScale);$('#quality').setAttribute('aria-pressed',quality==='low');showToast(quality==='low'?'省电画质已开启':'已恢复高清画质');};
 async function fullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){/* Fullscreen may be unavailable in an embedded browser. */}}
@@ -391,7 +480,7 @@ window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camer
 let tabActive=true;document.addEventListener('visibilitychange',()=>{tabActive=!document.hidden;clock.getDelta();});
 let frameCount=0,frameTime=0,perfFrames=0,perfTime=0,first=true;
 function animate(){requestAnimationFrame(animate);let rawDt=Math.min(clock.getDelta(),.05);if(!tabActive)return;let dt=paused?0:rawDt*flow;elapsed+=dt;time.value=elapsed;
-if(themeTarget){let a=1-Math.exp(-rawDt*2);scene.background.lerp(colorTemp.set(themeTarget.bg),a);scene.fog.color.copy(scene.background);ambient.color.lerp(colorTemp.set(themeTarget.sky),a);sun.color.lerp(colorTemp.set(themeTarget.sun),a);sun.intensity=T.MathUtils.lerp(sun.intensity,themeTarget.power,a);renderer.toneMappingExposure=T.MathUtils.lerp(renderer.toneMappingExposure,themeTarget.exposure,a);rayMat.uniforms.uColor.value.lerp(colorTemp.set(themeTarget.ray),a);}
+if(themeTarget){let a=1-Math.exp(-rawDt*2);scene.background.lerp(colorTemp.set(themeTarget.bg),a);scene.fog.color.copy(scene.background);ambient.color.lerp(colorTemp.set(themeTarget.sky),a);ambient.groundColor.lerp(colorTemp.set(themeTarget.ground),a);sandMat.color.lerp(colorTemp.set(themeTarget.sand),a);sun.color.lerp(colorTemp.set(themeTarget.sun),a);sun.intensity=T.MathUtils.lerp(sun.intensity,themeTarget.power,a);renderer.toneMappingExposure=T.MathUtils.lerp(renderer.toneMappingExposure,themeTarget.exposure,a);rayMat.uniforms.uColor.value.lerp(colorTemp.set(themeTarget.ray),a);surfaceMat.uniforms.uSunPower.value=sun.intensity;scene.fog.density=T.MathUtils.lerp(scene.fog.density,themeTarget.fog,a);surfaceMat.uniforms.uSkyTop.value.lerp(colorTemp.set(themeTarget.skyTop),a);surfaceMat.uniforms.uSkyHorizon.value.lerp(colorTemp.set(themeTarget.skyHorizon),a);}
 if(dt){reefLife.update(elapsed);motion.update(dt,foods);dust.rotation.y=elapsed*.003;for(let i=0;i<bubbles.length;i++){let b=bubbles[i];b.y+=dt*b.speed;if(b.y>10)b.y=-4.5;bubArray[i*3]=b.x+Math.sin(elapsed*.7+b.phase)*.16;bubArray[i*3+1]=b.y;bubArray[i*3+2]=b.z+Math.cos(elapsed*.5+b.phase)*.12;}bubGeo.attributes.position.needsUpdate=true;
 for(let i=foods.length-1;i>=0;i--){let f=foods[i];f.life+=dt;f.mesh.position.y-=f.speed*dt;f.mesh.position.x+=Math.sin(elapsed+f.life)*dt*.025;const x=f.mesh.position.x,z=f.mesh.position.z,ground=AquariumMotion.floorHeight(x,z);if(f.mesh.position.y<ground+.06)f.mesh.position.y=ground+.06;if(f.eaten||f.life>24){scene.remove(f.mesh);foods.splice(i,1);}}}
 let framing=innerWidth<800?1.26:1;let camX=Math.sin(state.yaw)*state.zoom,camY=2.5+state.pitch*22,camZ=Math.cos(state.yaw)*state.zoom*framing;camera.position.lerp(v1.set(camX,camY,camZ),1-Math.exp(-rawDt*3));camera.lookAt(0,.25,0);renderer.render(scene,camera);renderGuide(rawDt);
