@@ -62,6 +62,25 @@ float h=max(0.,position.y+4.55);transformed.x+=sin(uTime*.6+position.x*.4+positi
 const speciesCatalog=window.AQUARIUM_SPECIES,reef=window.AQUARIUM_REEF;
 const environment=reef.decorate(scene);
 environment.obstacles.push(...rockObstacles);
+// A broad glass bottle rests half buried in the foreground, its narrow neck tilted up.
+function addDriftBottle(){
+  const bottle=new T.Group();bottle.name='foreground-drift-bottle';
+  const glass=new T.MeshStandardMaterial({color:'#86c4ab',transparent:true,opacity:.43,roughness:.19,metalness:.12,depthWrite:false});
+  // Continue down the inside of the neck and body to give the glass a real lip and wall.
+  const profile=[[0,-.98],[.40,-.98],[.57,-.88],[.64,-.65],[.66,-.12],[.63,.39],[.54,.65],[.32,.85],[.20,.96],[.19,1.38],[.23,1.40],[.23,1.51],[.15,1.51],[.15,.97],[.27,.81],[.49,.60],[.58,.35],[.61,-.12],[.59,-.62],[.52,-.81],[.38,-.90],[0,-.90]];
+  bottle.add(new T.Mesh(new T.LatheGeometry(profile.map(([r,y])=>new T.Vector2(r,y)),48),glass));
+  const lip=new T.Mesh(new T.TorusGeometry(.195,.035,8,40),glass);lip.rotation.x=Math.PI/2;lip.position.y=1.45;bottle.add(lip);
+  const cork=new T.Mesh(new T.CylinderGeometry(.153,.145,.27,16),new T.MeshStandardMaterial({color:'#9c7950',roughness:1}));cork.position.y=1.54;bottle.add(cork);
+  // The pale rolled letter makes the little bottle read as a message in a bottle.
+  const paper=new T.Mesh(new T.CylinderGeometry(.115,.115,.74,20,1,true),new T.MeshStandardMaterial({color:'#e0cf9e',roughness:.92,side:T.DoubleSide}));
+  paper.position.set(0,.29,.12);paper.rotation.z=-.12;bottle.add(paper);
+  const paperRim=new T.Mesh(new T.TorusGeometry(.103,.012,6,24),paper.material);paperRim.rotation.x=Math.PI/2;paperRim.position.y=.37;paper.add(paperRim);
+  bottle.rotation.set(.12,0,-.62);
+  const x=3.1,z=9.2;bottle.position.set(x,AquariumMotion.floorHeight(x,z)-.15,z);scene.add(bottle);bottle.updateMatrixWorld(true);
+  // Keep swimmers clear of the exposed shoulder and neck.
+  for(const [y,radius] of [[.22,.66],[1.18,.29]])environment.obstacles.push({center:bottle.localToWorld(new T.Vector3(0,y,0)),radius});
+}
+addDriftBottle();
 // Small natural morsels on the open sand remain available without a feeding click.
 const morselGeo=new T.SphereGeometry(1,5,4),morselMat=new T.MeshStandardMaterial({color:'#827852',roughness:1});
 const sandSites=[];let detritusSeed=32147;const detritusRandom=()=>{detritusSeed=(detritusSeed*1664525+1013904223)>>>0;return detritusSeed/4294967296;};
