@@ -60,7 +60,13 @@ function carapace(parent,m){const positions=[],uv=[],indices=[],rings=24,sides=9
   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));geo.setIndex(indices);geo.computeVertexNormals();const shell=new T.Mesh(geo,m.shell);shell.name='carapace';parent.add(shell);
   // A closed rolled lip connects the dorsal shell to the broad, low plastron.
   const points=Array.from({length:97},(_,i)=>shellPoint(.995,i/96*TAU));const lip=new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(points),96,.012,6,false),m.rim);parent.add(lip);
-  blob(parent,m.belly,[-.025,-.032,0],[.548,.084,.393]);
+  // Reuse the dorsal boundary exactly so the underside closes the entire shell.
+  // A separate inset ellipsoid leaves visible gaps below the rolled lip.
+  const underside=geo.clone(),p=underside.attributes.position;
+  for(let j=0;j<=rings;j++)for(let i=0;i<=sides;i++)p.setY(j*(sides+1)+i,.018-.134*Math.sqrt(Math.max(0,1-(j/rings)**2)));
+  const undersideIndices=underside.index.array;
+  for(let i=0;i<undersideIndices.length;i+=3)[undersideIndices[i+1],undersideIndices[i+2]]=[undersideIndices[i+2],undersideIndices[i+1]];
+  underside.computeVertexNormals();const plastron=new T.Mesh(underside,m.belly);plastron.name='plastron';parent.add(plastron);
   for(const side of [-1,1]){const points=[];for(let i=0;i<=30;i++){const x=-.44+i/30*.86;points.push(new T.Vector3(x,-.096+Math.pow(x/.55,2)*.025,side*(.13+.018*Math.sin(i/30*Math.PI))));}parent.add(new T.Line(new T.BufferGeometry().setFromPoints(points),m.seam));}
   for(let j=0;j<5;j++){const x=-.37+j*.18,points=[];for(let i=0;i<=16;i++){const z=-.25+i/16*.5;points.push(new T.Vector3(x+Math.abs(z)*.12,-.113+.046*Math.pow(z/.39,2)+.03*Math.pow(x/.55,2),z));}parent.add(new T.Line(new T.BufferGeometry().setFromPoints(points),m.seam));}
 }
