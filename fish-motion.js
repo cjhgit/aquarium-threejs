@@ -383,6 +383,9 @@ class AquariumMotion {
       threat=Math.max(threat,weight);escapeX+=(c.x+tx*side*.7)*weight;escapeY+=c.y*weight*.5;escapeZ+=(c.z+tz*side*.7)*weight;
     }
     f.fear+=(threat-f.fear)*(1-Math.exp(-dt*(threat>f.fear?4:1.3)));
+    // A distant warning must not pull a feeding fish away from a safe pellet or
+    // replace its arrival braking with escape speed. Close threats still cancel feeding below.
+    if(f.feeding&&threat<=.45&&f.fear<=.45)return;
     if(f.species?.locomotion==='burst-rest'&&!f.feeding&&f.activity==='rest'&&threat>=.65){
       // A close threat warrants one relocation, not repeated flights back to
       // the resting spot next to the same shark.

@@ -187,6 +187,20 @@ globalThis.runMotionTests=async function(report=()=>{}){const results=[];
     engine.resolve(48);assert(a.g.position.y===ay&&b.g.position.y===by,'碰撞纠正改变了鱼的高度');assert(engine.audit().minGap>-.015,'取消垂直推挤后发生相交');
   });
   await test('看见食物后快速转入追食并明显加速',()=>{const {engine,fish}=fixture(1),f=fish[0];position(engine,f,-4,1,2);const food=pellet(0,1,2),before=f.g.position.distanceTo(food.mesh.position);advance(engine,1,[food]);assert(f.feeding,'没有进入追食状态');assert(f.speed>f.cruise*2,'追食没有达到巡游速度的两倍');assert(before-f.g.position.distanceTo(food.mesh.position)>1,'一秒内接近食物的距离不足');return {cruise:f.cruise,chase:f.speed};});
+  await test('远处水母的轻度警戒不阻止安全区域追食，近距离危险仍会打断',()=>{
+    const cases=[];
+    for(const fps of [25,60])for(const index of [0,5])for(const y of [.5,-1.5]){
+      const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[index]),f=fish[0];position(engine,f,-3,y,5,Math.PI/4);f.nextForage=Infinity;
+      engine.obstacles=[{kind:'jellyfish',danger:5,center:new T.Vector3(-3.8,3,-1.6),radii:new T.Vector3(.86,1.26,.86)}];
+      const food=pellet(0,y,2),foods=[food];let maxFear=0,time=0;
+      while(!food.eaten&&time<8){engine.update(1/fps,foods);time+=1/fps;maxFear=Math.max(maxFear,f.fear);food.mesh.position.y=Math.max(AquariumMotion.floorHeight(0,2)+.06,food.mesh.position.y-.17/fps);}
+      assert(maxFear>.08,'没有覆盖远处警戒');assert(food.eaten,`${fps}帧/${f.species.name}/${y}被远处警戒阻止进食`);cases.push({fps,species:f.species.name,y,time,maxFear});
+    }
+    const {engine,fish}=speciesFixture(AQUARIUM_SPECIES[0]),f=fish[0];position(engine,f,-3,.5,5,Math.PI/4);f.nextForage=Infinity;
+    const food=pellet(0,.5,2),foods=[food];advance(engine,.4,foods);assert(f.targetFood===food,'没有开始追食');
+    engine.obstacles=[{kind:'jellyfish',danger:5,center:f.g.position.clone().addScaledVector(f.axis,3),radii:new T.Vector3(.86,1.26,.86)}];
+    advance(engine,.2,foods);assert(!f.targetFood&&!food.eaten,'近距离水母没有打断追食');return cases;
+  });
   await test('远处看不到的食物不改变其他鱼的速度',()=>{const a=fixture(1),b=fixture(1);position(a.engine,a.fish[0],-4,1,2);position(b.engine,b.fish[0],-4,1,2);advance(a.engine,1,[]);advance(b.engine,1,[pellet(40,1,2)]);assert(!b.fish[0].targetFood,'发现了视野外的食物');assert(Math.abs(a.fish[0].speed-b.fish[0].speed)<1e-8,'不可见食物改变了鱼速');});
   await test('鱼不会隔着后脑勺发现远处食物',()=>{const {engine,fish}=fixture(1),f=fish[0];position(engine,f,-4,1,2);advance(engine,.8,[pellet(-10,1,2)]);assert(!f.targetFood,'把身后远处的食物当成可见食物');});
   await test('用嘴吃到食物后游开，而不是停在原地',()=>{const {engine,fish}=fixture(1),f=fish[0];position(engine,f,-4,1,2);const food=pellet(0,1,2);let elapsed=0;while(!food.eaten&&elapsed<8){engine.update(1/60,[food]);elapsed+=1/60;}assert(food.eaten,'八秒内没有吃到前方食物');const distance=f.g.position.distanceTo(food.mesh.position);advance(engine,5,[]);assert(f.g.position.distanceTo(food.mesh.position)>distance+1,'吃完后没有明显离开投喂点');assert(!f.targetFood,'吃完仍锁定旧食物');return {biteAt:elapsed,bites:f.bites};});
