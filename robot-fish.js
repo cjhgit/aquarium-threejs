@@ -22,11 +22,12 @@ function createModel(){const g=new T.Group(),glow=cyan.clone();g.userData.specie
   shell(g,[[-.73,.22],[-.62,.25],[.69,.28]],lakeBlue);
   // Deliberately exposed rectangular service plate, fasteners and luminous side rails.
   for(const side of [-1,1]){
-    block(g,lakeBlue,[-.02,.015,side*.318],[.92,.32,.055]);
-    block(g,saltWhite,[.16,.015,side*.352],[.28,.22,.025]);
-    block(g,glow,[-.10,.215,side*.293],[.85,.038,.035]);
+    // Leave a clear strip of white armour between the side panel and camera bezel.
+    block(g,lakeBlue,[-.095,.015,side*.318],[.77,.32,.055]);
+    block(g,saltWhite,[.10,.015,side*.352],[.22,.22,.025]);
+    block(g,glow,[-.12,.215,side*.293],[.72,.038,.035]);
     block(g,glow,[-.18,-.21,side*.275],[.64,.024,.032]);
-    for(const x of [-.4,.39])for(const y of [-.10,.13])mesh(g,sphere,saltWhite,[x,y,side*.353],[.030,.030,.018]);
+    for(const x of [-.4,.24])for(const y of [-.10,.13])mesh(g,sphere,saltWhite,[x,y,side*.353],[.030,.030,.018]);
     for(let i=0;i<3;i++){const vent=block(g,saltWhite,[-.29+i*.085,.01,side*.355],[.024,.17,.025]);vent.rotation.z=-.25;}
     // Flat concentric camera bezel, no organic eyeball, pupil or mouth.
     const bezel=mesh(g,new T.CylinderGeometry(.14,.14,.07,16),lakeBlue,[.57,.045,side*.235]);bezel.rotation.x=Math.PI/2;
