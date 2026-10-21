@@ -5,9 +5,10 @@
 (() => {
 'use strict';
 const T=globalThis.THREE,clamp=T.MathUtils.clamp,TAU=Math.PI*2;
-const mat=(color,extra={})=>new T.MeshStandardMaterial({color,roughness:.7,...extra});
+const mat=(color,extra={})=>new T.MeshStandardMaterial({color,roughness:.78,flatShading:true,...extra});
 const hash=(a,b)=>{const v=Math.sin(a*127.1+b*311.7)*43758.5453;return v-Math.floor(v);};
-const ball=new T.SphereGeometry(1,24,16);
+// Moderate facet sizes: readable at aquarium scale, with enough segments for a rounded silhouette.
+const ball=new T.SphereGeometry(1,12,8);
 function blob(parent,material,position,scale){const m=new T.Mesh(ball,material);m.position.fromArray(position);m.scale.fromArray(scale);parent.add(m);return m;}
 // Batch rigid details by material while keeping the animated head and paddles separate.
 function batchRigid(group){group.updateMatrixWorld(true);const inv=group.matrixWorld.clone().invert(),buckets=new Map();group.traverse(o=>{if(!o.isMesh&&!o.isLine)return;const key=o.material;if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(o);});
@@ -26,7 +27,7 @@ function path(ctx,poly){ctx.beginPath();poly.forEach((p,i)=>i?ctx.lineTo(...p):c
 function canvasTexture(canvas){const t=new T.CanvasTexture(canvas);t.colorSpace=T.SRGBColorSpace;t.anisotropy=4;return t;}
 let materials;
 function getMaterials(){if(materials)return materials;
-  const shell=document.createElement('canvas');shell.width=shell.height=1536;const c=shell.getContext('2d'),N=shell.width;
+  const shell=document.createElement('canvas');shell.width=shell.height=1024;const c=shell.getContext('2d'),N=shell.width;
   c.fillStyle='#3b4130';c.fillRect(0,0,N,N);
   const seeds=[];for(let i=0;i<5;i++)seeds.push([-.76+i*.38,0]);
   for(const side of [-1,1])for(let i=0;i<4;i++)seeds.push([-.61+i*.405,side*(.51-.07*Math.abs(-.61+i*.405))]);
@@ -36,30 +37,26 @@ function getMaterials(){if(materials)return materials;
   shields.forEach(({poly,center,marginal},i)=>{
     const pp=poly.map(p=>[(p[0]*.47+.5)*N,(p[1]*.47+.5)*N]),cx=(center[0]*.47+.5)*N,cy=(center[1]*.47+.5)*N,h=hash(i,3);
     c.save();path(c,pp);c.clip();
-    const grad=c.createRadialGradient(cx-20,cy-12,2,cx,cy,marginal?200:430);
-    grad.addColorStop(0,h>.65?'#a39357':'#8b8850');grad.addColorStop(.5,h>.65?'#7c7542':'#667247');grad.addColorStop(1,'#414f34');c.fillStyle=grad;c.fillRect(0,0,N,N);
-    // Fine, irregular radial striations and subdued nested growth rings.
-    for(let j=0;j<190;j++){const a=j/190*TAU,r=20+hash(j,i)*50;c.beginPath();c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.quadraticCurveTo(cx+Math.cos(a+.07)*150,cy+Math.sin(a+.07)*150,cx+Math.cos(a)*500,cy+Math.sin(a)*500);c.strokeStyle=j%3?'rgba(218,190,112,.12)':'rgba(31,46,27,.20)';c.lineWidth=.5+hash(i,j)*2.5;c.stroke();}
-    for(let j=0;j<900;j++){const x=hash(j,i+1)*N,y=hash(i+9,j)*N;c.fillStyle=j%3?'rgba(225,204,137,.08)':'rgba(31,43,25,.12)';c.fillRect(x,y,1+hash(i,j)*5,1+hash(j,i)*4);}
-    for(let j=0;j<5;j++){const t=.70+j*.053;path(c,pp.map(p=>[cx+(p[0]-cx)*t,cy+(p[1]-cy)*t]));c.strokeStyle='rgba(199,178,108,.13)';c.lineWidth=1.3;c.stroke();}
-    c.restore();path(c,pp);c.strokeStyle='#343e2c';c.lineWidth=marginal?5:7;c.lineJoin='round';c.stroke();c.strokeStyle='rgba(190,177,112,.6)';c.lineWidth=1.8;c.stroke();
+    // Restrained solid shield colours leave the larger planar faces clearly visible.
+    c.fillStyle=h>.65?'#8d8450':h>.3?'#74804e':'#657446';c.fillRect(0,0,N,N);
+    c.restore();path(c,pp);c.strokeStyle='#343e2c';c.lineWidth=marginal?3:4;c.lineJoin='round';c.stroke();c.strokeStyle='rgba(190,177,112,.6)';c.lineWidth=1.2;c.stroke();
   });
-  function scales(cols,rows){const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=512;const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
-    ctx.fillStyle='#c2b58a';ctx.fillRect(0,0,w,h);const seeds=[];for(let y=-1;y<=rows;y++)for(let x=-1;x<=cols;x++)seeds.push([(x+.25+hash(x+29,y+19)*.5)*w/cols,(y+.25+hash(x+41,y+73)*.5)*h/rows]);
+  function scales(cols,rows){const canvas=document.createElement('canvas');canvas.width=512;canvas.height=256;const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
+    ctx.fillStyle='#949b73';ctx.fillRect(0,0,w,h);const seeds=[];for(let y=-1;y<=rows;y++)for(let x=-1;x<=cols;x++)seeds.push([(x+.25+hash(x+29,y+19)*.5)*w/cols,(y+.25+hash(x+41,y+73)*.5)*h/rows]);
     // Only neighbouring seeds can cut these small cells.
     seeds.forEach((a,i)=>{let poly=[[a[0]-w/cols,a[1]-h/rows],[a[0]+w/cols,a[1]-h/rows],[a[0]+w/cols,a[1]+h/rows],[a[0]-w/cols,a[1]+h/rows]];seeds.forEach((b,j)=>{if(i===j||Math.abs(a[0]-b[0])>w/cols*2.1||Math.abs(a[1]-b[1])>h/rows*2.1)return;poly=clip(poly,b[0]-a[0],b[1]-a[1],(b[0]*b[0]+b[1]*b[1]-a[0]*a[0]-a[1]*a[1])/2);});
       const h0=hash(i,18);path(ctx,poly.map(p=>[a[0]+(p[0]-a[0])*.88,a[1]+(p[1]-a[1])*.88]));const grad=ctx.createLinearGradient(a[0],a[1]-20,a[0]+8,a[1]+35);grad.addColorStop(0,h0>.6?'#6f7750':'#596c48');grad.addColorStop(1,h0>.6?'#555d3c':'#3d5039');ctx.fillStyle=grad;ctx.fill();ctx.strokeStyle='#a49a70';ctx.lineWidth=1.2;ctx.lineJoin='round';ctx.stroke();
     });return canvasTexture(canvas);
   }
-  const shellMap=canvasTexture(shell),skinMap=scales(11,8),neckMap=scales(26,14),flipperMap=scales(9,15);
-  materials={shell:mat('#ffffff',{map:shellMap,bumpMap:shellMap,bumpScale:.009,roughness:.48}),rim:mat('#8f9160'),skin:mat('#ffffff',{map:skinMap,bumpMap:skinMap,bumpScale:.002}),neck:mat('#b4b38d',{map:neckMap}),limb:mat('#ffffff',{map:flipperMap,bumpMap:flipperMap,bumpScale:.0025,side:T.DoubleSide}),belly:mat('#c5bd8d'),beak:mat('#a99e70'),eye:mat('#101c17',{roughness:.16}),iris:mat('#8a8650',{roughness:.48}),glint:new T.MeshBasicMaterial({color:'#e4ead4'}),seam:new T.LineBasicMaterial({color:'#3e4930'}),nostril:mat('#29392c')};return materials;
+  const shellMap=canvasTexture(shell),skinMap=scales(8,6),neckMap=scales(12,8),flipperMap=scales(6,10);
+  materials={shell:mat('#ffffff',{map:shellMap,roughness:.8}),rim:mat('#8f9160'),skin:mat('#ffffff',{map:skinMap}),neck:mat('#b4b38d',{map:neckMap}),limb:mat('#ffffff',{map:flipperMap,side:T.DoubleSide}),belly:mat('#c5bd8d'),beak:mat('#a99e70'),eye:mat('#101c17',{roughness:.16,flatShading:false}),iris:mat('#8a8650',{roughness:.48,flatShading:false}),glint:new T.MeshBasicMaterial({color:'#e4ead4'}),seam:new T.LineBasicMaterial({color:'#3e4930'}),nostril:mat('#29392c')};return materials;
 }
 function shellPoint(r,a){const x=Math.cos(a)*r,z=Math.sin(a)*r;const width=.435*(1-.15*x);return new T.Vector3(x*.59,.018+.245*Math.pow(Math.max(0,1-r*r),.72),z*width);}
-function carapace(parent,m){const positions=[],uv=[],indices=[],rings=24,sides=96;
+function carapace(parent,m){const positions=[],uv=[],indices=[],rings=6,sides=24;
   for(let j=0;j<=rings;j++)for(let i=0;i<=sides;i++){const r=j/rings,a=i/sides*TAU,p=shellPoint(r,a);positions.push(...p);uv.push(.5+Math.cos(a)*r*.47,.5-Math.sin(a)*r*.47);if(j<rings&&i<sides){const k=j*(sides+1)+i;indices.push(k,k+1,k+sides+1,k+1,k+sides+2,k+sides+1);}}
-  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));geo.setIndex(indices);geo.computeVertexNormals();const shell=new T.Mesh(geo,m.shell);shell.name='carapace';parent.add(shell);
+  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));geo.setIndex(indices);geo.userData={rings,sides};geo.computeVertexNormals();const shell=new T.Mesh(geo,m.shell);shell.name='carapace';parent.add(shell);
   // A closed rolled lip connects the dorsal shell to the broad, low plastron.
-  const points=Array.from({length:97},(_,i)=>shellPoint(.995,i/96*TAU));const lip=new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(points),96,.012,6,false),m.rim);parent.add(lip);
+  const points=Array.from({length:sides+1},(_,i)=>shellPoint(.995,i/sides*TAU));const lip=new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(points),sides,.012,6,false),m.rim);parent.add(lip);
   // Reuse the dorsal boundary exactly so the underside closes the entire shell.
   // A separate inset ellipsoid leaves visible gaps below the rolled lip.
   const underside=geo.clone(),p=underside.attributes.position;
@@ -72,7 +69,7 @@ function carapace(parent,m){const positions=[],uv=[],indices=[],rings=24,sides=9
 }
 // Closed, foil-like flippers with a broad shoulder and a tapered, swept tip.
 function paddle(parent,side,pair,m){const pivot=new T.Group();pivot.name=(pair?'hind':'fore')+'-flipper-'+side;pivot.position.fromArray(pair?[-.43,-.037,side*.25]:[.29,-.018,side*.30]);parent.add(pivot);
-  const rows=22,sides=16,L=pair?.35:.86,positions=[],uv=[],indices=[];
+  const rows=8,sides=8,L=pair?.35:.86,positions=[],uv=[],indices=[];
   for(let j=0;j<=rows;j++){const t=j/rows,z=side*L*t,xc=pair?-.13*t:-.085*t-.23*t*t;
     const half=pair?.123*Math.pow(1-t,.47)+.002:(.108+.055*Math.sin(Math.PI*t))*Math.pow(1-t,.6)+.001;
     const thickness=(pair?.023:.037)*Math.pow(1-t,.85)+.001;
@@ -81,13 +78,13 @@ function paddle(parent,side,pair,m){const pivot=new T.Group();pivot.name=(pair?'
   }
   // End caps remove the open pipe-like ends of the old paddle.
   for(const j of [0,rows])for(let i=1;i<sides-1;i++){const k=j*(sides+1);const tri=[k,k+i,k+i+1];if((side>0)===(j===0))tri.reverse();indices.push(...tri);}
-  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));for(let i=0;i<indices.length;i+=3)[indices[i+1],indices[i+2]]=[indices[i+2],indices[i+1]];geo.setIndex(indices);geo.computeVertexNormals();
+  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(uv,2));for(let i=0;i<indices.length;i+=3)[indices[i+1],indices[i+2]]=[indices[i+2],indices[i+1]];geo.setIndex(indices);geo.userData={rows,sides};geo.computeVertexNormals();
   const cupped=geo.attributes.position.clone();for(let i=0;i<cupped.count;i++){const t=Math.abs(cupped.getZ(i))/L;cupped.setY(i,cupped.getY(i)-.09*t*t);}
   const bent=geo.clone();bent.setAttribute('position',cupped);bent.computeVertexNormals();geo.morphAttributes.position=[cupped];geo.morphAttributes.normal=[bent.attributes.normal.clone()];bent.dispose();const mesh=new T.Mesh(geo,m.limb);mesh.name=pivot.name+'-paddle';pivot.add(mesh);return {pivot,mesh,side,pair};
 }
 // Skull rings go from the neck into a broad cranium and a blunt, downturned beak.
 function skullMesh(parent,m){const shape=new T.CatmullRomCurve3([[0,.059,.064],[.055,.078,.079],[.12,.104,.100],[.19,.099,.096],[.255,.079,.078],[.295,.055,.060],[.313,.033,.042],[.32,.008,.015]].map(p=>new T.Vector3(...p)));
-  const rings=32,sides=32,positions=[],uv=[],indices=[];
+  const rings=10,sides=12,positions=[],uv=[],indices=[];
   const surface=(t,a)=>{const p=shape.getPoint(t),cy=.018+.017*Math.sin(t*Math.PI)-.014*t;return new T.Vector3(p.x,cy+Math.sin(a)*p.y,Math.cos(a)*p.z);};
   for(let j=0;j<=rings;j++)for(let i=0;i<=sides;i++){const p=surface(j/rings,i/sides*TAU);positions.push(...p);uv.push(j/rings,i/sides);if(j<rings&&i<sides){const k=j*(sides+1)+i;indices.push(k,k+1,k+sides+1,k+1,k+sides+2,k+sides+1);}}
   for(let i=1;i<sides-1;i++){const k=rings*(sides+1);indices.push(k,k+i,k+i+1);}
